@@ -1,3 +1,5 @@
+![Static Badge](https://img.shields.io/badge/Created_by-Vikentiy_Pachovskiy-brightgreen)
+
 > 📄 [Русская версия](./README.md)
 
 ---
