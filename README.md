@@ -1,4 +1,4 @@
-![Static Badge](https://img.shields.io/badge/https%3A%2F%2Fimg.shields.io%2Fbadge%2FCreated_by-Vikentiy_Pachovskiy-brightgreen)
+![Static Badge](https://img.shields.io/badge/Created_by-Vikentiy_Pachovskiy-brightgreen)
 
 > 📄 [English version](./README-EN.md)
 
