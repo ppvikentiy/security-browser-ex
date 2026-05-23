@@ -1,0 +1,85 @@
+{
+  "manifest_version": 3,
+  "name": "Browser Security",
+  "version": "1.5",
+  "description": "Focus blocking, anti-fingerprint, network and privacy tools for Chromium (MV3)",
+  "action": {
+    "default_popup": "public/popup.html",
+    "default_title": "Browser Security"
+  },
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*/*"],
+      "js": ["src/security-defaults.js", "src/settings-bridge.js", "src/stats-bridge.js"],
+      "run_at": "document_start",
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
+      "all_frames": true
+    },
+    {
+      "matches": ["*://*/*"],
+      "js": ["src/stats-main.js", "src/device-security.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
+      "all_frames": true
+    },
+    {
+      "matches": ["*://*/*"],
+      "js": ["src/content.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
+      "all_frames": true
+    },
+    {
+      "matches": ["*://*/*"],
+      "js": ["src/security.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
+      "all_frames": true
+    },
+    {
+      "matches": ["*://*/*"],
+      "js": ["src/security-defaults.js", "src/network-security.js", "src/ds-block.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
+      "all_frames": true
+    },
+    {
+      "matches": ["*://*/*"],
+      "js": ["src/security-defaults.js", "src/threat-shield.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
+      "all_frames": false
+    },
+    {
+      "matches": ["*://*/*"],
+      "js": ["src/security-defaults.js", "src/copy-helper.js"],
+      "run_at": "document_idle",
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/security-worker.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "host_permissions": ["*://*/*"],
+  "permissions": ["storage", "tabs", "windows", "scripting", "declarativeNetRequest", "declarativeNetRequestFeedback", "privacy"],
+  "options_page": "public/options.html"
+}

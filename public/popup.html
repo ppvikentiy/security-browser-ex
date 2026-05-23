@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Browser Security</title>
+    <link rel="stylesheet" href="popup-ui.css" />
+  </head>
+  <body>
+    <div class="popup-root">
+    <h1>Быстрые действия</h1>
+
+    <div class="row">
+      <div class="label">
+        <div class="label-title">Расширение</div>
+        <div class="label-sub">Все модули сразу</div>
+      </div>
+      <div class="toggle active" id="extensionGloballyEnabled" role="switch" aria-checked="true">
+        <div class="toggle-slider"></div>
+      </div>
+    </div>
+
+    <div id="sections">
+      <div class="row">
+        <div class="label">
+          <div class="label-title">Focus Blocker</div>
+          <div class="label-sub">События фокуса и видимости вкладки</div>
+        </div>
+        <div class="toggle active" id="focusBlockingEnabled" role="switch" aria-checked="true">
+          <div class="toggle-slider"></div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="label">
+          <div class="label-title">Анти‑фингерпринт</div>
+          <div class="label-sub">Подмена screen/WebGL/Canvas и др.</div>
+        </div>
+        <div class="toggle" id="securityEnabledPopup" role="switch" aria-checked="false">
+          <div class="toggle-slider"></div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="label">
+          <div class="label-title">Network Security</div>
+          <div class="label-sub">Локальные адреса, WebRTC…</div>
+        </div>
+        <div class="toggle" id="networkSecurityEnabledPopup" role="switch" aria-checked="false">
+          <div class="toggle-slider"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="host-line">Текущий сайт: <strong id="currentHost">—</strong></div>
+
+    <div class="actions">
+      <button type="button" id="btnPause" disabled>Временно отключить на этой вкладке</button>
+      <button type="button" id="btnAddExclusion" disabled>Добавить сайт в исключения</button>
+    </div>
+    <div class="hint" id="statusHint"></div>
+
+    <div class="footer">
+      <a href="#" id="openOptions">Все настройки…</a>
+      <div class="footer-powered">
+        Powered by
+        <a href="https://github.com/ppvikentiy/security-browser-ex" target="_blank" rel="noopener noreferrer">https://github.com/ppvikentiy/security-browser-ex</a>
+      </div>
+    </div>
+
+    </div>
+
+    <script src="../src/popup.js"></script>
+  </body>
+</html>
