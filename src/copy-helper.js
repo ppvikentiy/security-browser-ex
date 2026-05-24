@@ -41,7 +41,8 @@
     }
   }
 
-  // patternMatchesHost + normalizeExcludedDomainsListFromStorage: security-defaults.js (see manifest).
+  // patternMatchesHost + normalizeExcludedDomainsListFromStorage: src/security-defaults.js
+  // (injected in the same isolated world via the document_start content_scripts entry; do not reload here).
 
   // Extension is enabled everywhere except excluded domains
   function isExcluded(excludedDomains) {

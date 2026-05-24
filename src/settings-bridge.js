@@ -58,6 +58,23 @@ function fbPatternMatchesHost(pattern, host) {
   return h === p || h.endsWith("." + p);
 }
 
+/**
+ * Normalizes excluded-domain list from storage — works when sibling scripts don't share
+ * lexical scope with security-defaults.js (see __focusBlockerShared in security-defaults.js).
+ */
+function fbNormalizeExcludedDomainsListFromStorage(rawList) {
+  const shr = fbSharedRoot();
+  if (shr && typeof shr.normalizeExcludedDomainsListFromStorage === "function") {
+    return shr.normalizeExcludedDomainsListFromStorage(rawList);
+  }
+  try {
+    if (typeof normalizeExcludedDomainsListFromStorage === "function") {
+      return normalizeExcludedDomainsListFromStorage(rawList);
+    }
+  } catch (_e) {}
+  return [];
+}
+
 function fbMergeSecurityFromStorage(result) {
   const s = fbSharedRoot();
   if (s && typeof s.mergeSecurityFromStorage === "function") return s.mergeSecurityFromStorage(result || {});
@@ -432,7 +449,7 @@ function broadcastAll(result) {
   const focusStrict = result.focusBlockingStrict === true;
   const blockedEvents = mergeEffectiveBlockedEvents(result.blockedEvents, focusStrict);
   const rawExcluded = Array.isArray(result.excludedDomains) ? result.excludedDomains : DEFAULT_EXCLUDED_DOMAINS;
-  const excludedDomains = normalizeExcludedDomainsListFromStorage(rawExcluded);
+  const excludedDomains = fbNormalizeExcludedDomainsListFromStorage(rawExcluded);
   const globalOn = result.extensionGloballyEnabled !== false;
   const focusModuleOn = result.focusBlockingEnabled !== false;
   const excluded = isExcluded(excludedDomains);

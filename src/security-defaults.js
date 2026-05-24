@@ -1364,6 +1364,7 @@ function normalizeExcludedDomainsForDnrHostList(patterns) {
       mergeDeviceSecurityFromStorage,
       mergeThreatShieldFromStorage,
       patternMatchesHost,
+      normalizeExcludedDomainsListFromStorage,
     };
   } catch (_e) {}
 })();
