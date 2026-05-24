@@ -222,7 +222,10 @@
     else bumpFocusThrottled("winblur", 400, "window_blur_suppressed");
   };
 
-  const blockInlineHandler = (obj, prop) => {
+  const blockInlineHandler = (obj, prop, eventTypeKey) => {
+    const eventKey = typeof eventTypeKey === "string" ? eventTypeKey.trim().toLowerCase() : "";
+    if (!eventKey) return;
+
     const originalDescriptor = getPropertyDescriptor(obj, prop);
     let storedValue;
     try {
@@ -233,7 +236,8 @@
 
     Object.defineProperty(obj, prop, {
       get: () => {
-        if (isEnabled) {
+        const block = isEnabled && BLOCKED_EVENTS.has(eventKey);
+        if (block) {
           bumpFocusThrottled(`inline:${prop}`, 250, `inline_handler_${prop}`);
           return null;
         }
@@ -246,7 +250,7 @@
         return storedValue;
       },
       set: (value) => {
-        if (isEnabled) return;
+        if (isEnabled && BLOCKED_EVENTS.has(eventKey)) return;
         storedValue = value;
         if (originalDescriptor && typeof originalDescriptor.set === "function") {
           originalDescriptor.set.call(obj, value);
@@ -256,9 +260,16 @@
     });
   };
 
-  blockInlineHandler(window, "onblur");
-  blockInlineHandler(window, "onfocus");
-  blockInlineHandler(document, "onvisibilitychange");
+  blockInlineHandler(window, "onblur", "blur");
+  blockInlineHandler(window, "onfocus", "focus");
+  blockInlineHandler(document, "onvisibilitychange", "visibilitychange");
+
+  try {
+    if ("onpageshow" in window) blockInlineHandler(window, "onpageshow", "pageshow");
+    if ("onpagehide" in window) blockInlineHandler(window, "onpagehide", "pagehide");
+    if ("onfreeze" in document) blockInlineHandler(document, "onfreeze", "freeze");
+    if ("onresume" in document) blockInlineHandler(document, "onresume", "resume");
+  } catch (_e) {}
 
   const blockedHandlers = new Map();
 

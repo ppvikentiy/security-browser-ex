@@ -8,7 +8,7 @@
 
 ![Browser Security](./assets/icon.svg)
 
-Расширение для Chromium (Manifest V3): защита от слежки за фокусом и вкладкой, анти‑фингерпринт, сетевые и «устройственные» модули, оповещения о подозрительных страницах, статистика и настройки в одном месте.
+Расширение для Chromium (Manifest V3): защита от слежки за фокусом и вкладкой, анти‑фингерпринт, сетевые и «устройственные» модули, оповещения о подозрительных страницах и полноценная **страница параметров** ([`public/options.html`](./public/options.html), в манифесте — [`options_page`](./manifest.json)): исключённые домены, все модули, статистика, доступность. Во всплывающем окне действий — быстрые переключатели и ссылка «Все настройки…».
 
 **Версия:** см. поле `"version"` в [`manifest.json`](./manifest.json).
 
@@ -22,21 +22,23 @@
 
 * Блокирует типичные сигналы «ушёл с вкладки / потерял фокус»: `visibilitychange` (включая vendor‑варианты), `blur` / `focus` / `focusin` / `focusout`
 * Подменяет чтение `document.hidden`, `visibilityState` и связанных полей так, чтобы страница «видела» вкладку как всегда активную (когда модуль включён)
-* Ограничивает `addEventListener` / `removeEventListener` / `dispatchEvent` для перечисленных типов событий и inline‑обработчики `window.onfocus` / `window.onblur` / `document.onvisibilitychange`
+* Ограничивает `addEventListener` / `removeEventListener` / `dispatchEvent` для перечисленных типов событий и inline‑обработчики `window.onfocus` / `window.onblur` / `document.onvisibilitychange` — только пока соответствующий тип события включён в списке блокировки
+* **Жёсткая подмена (lifecycle)** — отдельный переключатель в настройках (`focusBlockingStrict`, **по умолчанию выключен**): к вашему списку событий добавляются `freeze`, `resume`, `pagehide`, `pageshow`, с подавлением связанных inline‑свойств (`window.onpageshow`, `window.onpagehide`, `document.onfreeze`, `document.onresume` при поддержке в браузере). Может мешать SPA и восстановлению страницы из bfcache
 
 ### Расширенные возможности
 
 * **Попап и глобальное включение** — один переключатель «всё расширение», отдельно Focus Blocker, анти‑фингерпринт и Network Security; пауза только для текущей вкладки; быстро добавить сайт в исключения
 * **Анти‑фингерпринт (Security)** — подмена в JS и через заголовки запросов: экран/окно, батарея, CPU/память, `matchMedia`, WebGL, шум Canvas, часовой пояс, `navigator` / User‑Agent / Client Hints, языки и `Accept-Language`, allowlist шрифтов; режимы отпечатка (per domain / session / random)
 * **Network Security** — блокировка запросов из страницы к localhost, частным и link‑local сетям (через Declarative Net Request), опционально жёсткая политика WebRTC против утечки IP (`chrome.privacy.network.webRTCIPHandlingPolicy`)
-* **Privacy pack** — отдельный набор DNR‑правил под короткий список трекер‑доменов (узкий или широкий набор типов ресурсов); не смешивается с косметикой DS Block
+* **Privacy pack** — отдельный набор DNR‑правил под короткий список трекер‑доменов (узкий или широкий набор типов ресурсов); не смешивается с косметикой ADS Block
 * **Изоляция (`chrome.privacy`)** — глобально: отключение Referer, hyperlink auditing (`<a ping>`), network prediction/prefetch; см. предупреждения в настройках (SSO, оплаты, CDN)
 * **Device Security** — жёсткое ограничение `localStorage` / `sessionStorage`, IndexedDB, Cache API; сокрытие `mediaDevices` и `geolocation`; режим lockdown дескрипторов
-* **Threat Shield** — локальное предупреждение поверх страницы (основной фрейм) при срабатывании эвристик: не‑HTTPS для публичных хостов, совпадение с встроенным или пользовательским списком «подозрительных» шаблонов хостов, похожие на фишинг многослойные TLD, опционально «мусорная» форма FQDN, цепочка HTTP‑редиректов до документа; белый список и дополнительные паттерны в настройках; текст баннера задан в [`src/threat-shield.js`](src/threat-shield.js)
-* **DS Block** — попапы без пользовательского жеста, косметическое скрытие по CSS (в т.ч. через `chrome.scripting` для строгого CSP), блок телеметрии доменами через DNR; свои списки доменов и селекторов
-* **Копирование** — обход частых блокировок копирования; подсветка элемента и горячие клавиши (см. настройки раздела «Копирование»)
+* **Threat Shield** («Активная интернет защита» в настройках) — локальное предупреждение поверх страницы (основной фрейм) при срабатывании эвристик: не‑HTTPS для публичных хостов, совпадение с встроенным или пользовательским списком «подозрительных» шаблонов хостов, похожие на фишинг многослойные TLD, опционально «мусорная» форма FQDN, цепочка HTTP‑редиректов до документа; белый список и дополнительные паттерны в настройках; текст баннера задан в [`src/threat-shield.js`](src/threat-shield.js)
+* **ADS Block** (ранее модуль DS Block; код — [`src/ds-block.js`](src/ds-block.js)) — попапы без пользовательского жеста, косметическое скрытие по CSS (в т.ч. через `chrome.scripting` для строгого CSP), блок телеметрии доменами через DNR; свои списки доменов и селекторов
+* **Копирование** — обход частых блокировок копирования; подсветка элемента и горячие клавиши (см. настройки раздела «Помощник при копировании»)
+* **Доступность** — в параметрах можно уменьшить анимации и использовать более спокойный интерфейс (секция «Доступность»)
 * **Исключённые домены** — шаблоны хостов (в т.ч. `*.example.com`); на модули и часть DNR влияет список исключений; глобальные `chrome.privacy` для всего браузера от исключений не откатываются автоматически
-* **Статистика** — локальные суммы по домену верхнего окна: фокус, подмены FP, сеть в JS, DNR, устройство, DS; при настроенном `declarativeNetRequestFeedback` — учёт срабатываний правил DNR для бейджа и таблицы
+* **Статистика** — локальные суммы по домену верхнего окна: фокус, подмены FP, сеть в JS, DNR, устройство, ADS Block; при настроенном `declarativeNetRequestFeedback` — учёт срабатываний правил DNR для бейджа и таблицы
 
 После смены настроек **перезагрузите страницу**, где работают скрипты расширения.
 
@@ -46,6 +48,7 @@
 2. Распакуйте папку (если скачивали ZIP)
 3. Откройте `chrome://extensions/`, включите «Режим разработчика»
 4. «Загрузить распакованное расширение» → выберите корень проекта (папку, где лежит [`manifest.json`](./manifest.json))
+5. Параметры: из попапа ссылка **«Все настройки…»** или `chrome://extensions` → карточка расширения → «Просмотреть на странице параметров расширения» / пункт про расширенные настройки (зависит от версии браузера)
 
 ## Совместимость
 
@@ -63,9 +66,9 @@
 
 | Разрешение | Зачем |
 |------------|--------|
-| `storage` | Настройки в `chrome.storage.local` / `sync`, сессионные карты в `chrome.storage.session` (пауза вкладки, косметический CSS, счётчики для бейджа) |
+| `storage` | Настройки: основным хранилищем служит `chrome.storage.local` (при первом запуске возможна миграция из `sync`), сессионные карты в `chrome.storage.session` (пауза вкладки, косметический CSS, счётчики для бейджа) |
 | `tabs`, `windows` | Активная вкладка в попапе, бейдж, хост для статистики |
-| `scripting` | Вставка/снятие косметического CSS для DS Block (`insertCSS` / `removeCSS`) |
+| `scripting` | Вставка/снятие косметического CSS для ADS Block (`insertCSS` / `removeCSS`) |
 | `declarativeNetRequest`, `declarativeNetRequestFeedback` | Динамические правила блокировки/подмены заголовков; опционально `onRuleMatchedDebug` для статистики DNR |
 | `privacy` | WebRTC policy, Referer / ping / network prediction |
 | `host_permissions` `*://*/*` | Условия DNR и работа с вкладками на обычных сайтах |
@@ -77,7 +80,7 @@
 1. **Подмена заголовков User-Agent и Client Hints** — правило `modifyHeaders` (id `990001`), если включены расширение, Security и флаг Navigator/UA; при ошибке Chromium применяется стратегия «полный набор → урезанный → только User-Agent»
 2. **Accept-Language** — отдельное правило `modifyHeaders` (id `990002`), если включены Security и Languages
 3. **Сетевые блокировки** — до 12 правил `block` с `regexFilter` на localhost / RFC1918 / link-local / ULA IPv6 для типов ресурсов без `main_frame`/`sub_frame`, чтобы не ломать прямой заход на LAN‑страницы
-4. **DS Block телеметрия** — блок доменами пакетами по 40 доменов на правило, слоты с `990060`
+4. **ADS Block телеметрия** — блок доменами пакетами по 40 доменов на правило, слоты с `990060`
 5. **Privacy pack** — аналогично, слоты с `990078`, узкий или широкий набор `resourceTypes`
 6. **WebRTC** — `chrome.privacy.network.webRTCIPHandlingPolicy.set` или `clear` в зависимости от Network Security
 7. **Изоляция** — `referrersEnabled`, `hyperlinkAuditingEnabled`, `networkPredictionEnabled` через `chrome.privacy`
@@ -87,8 +90,8 @@
 Дополнительно:
 
 * **Пауза вкладки** — `chrome.storage.session`: ключ `focusBlockerPausedTabIds` (`{ [tabId]: true }`), сброс при смене URL / закрытии вкладки
-* **Косметика DS** — хранение CSS по `tabId`, применение через `scripting` API
-* **Статистика** — ключ `focusBlockerStatsByHost` в `local`/`sync`; инкремент из контента через сообщения и из `declarativeNetRequest.onRuleMatchedDebug` при доступности
+* **Косметика ADS Block** — хранение CSS по `tabId`, применение через `scripting` API
+* **Статистика** — ключ `focusBlockerStatsByHost` в `chrome.storage.local` (см. миграцию из `sync` выше); инкремент из контента через сообщения и из `declarativeNetRequest.onRuleMatchedDebug` при доступности
 * **Бейдж** — сумма полей счётчика активной вкладки в `focusBlockerTabStat` (session)
 
 ### Сообщения `chrome.runtime.sendMessage` → background
@@ -116,7 +119,7 @@
 | `FOCUS_BLOCKER_SETTINGS` | Списки событий фокуса и флаг «модуль включён» для `content.js` |
 | `FOCUS_BLOCKER_SECURITY_SETTINGS` | Сведения Security + URL worker для тяжёлых патчей |
 | `FOCUS_BLOCKER_NETWORK_SETTINGS` | Флаги Network Security для `network-security.js` |
-| `FOCUS_BLOCKER_DS_BLOCK_SETTINGS` | DS Block |
+| `FOCUS_BLOCKER_DS_BLOCK_SETTINGS` | ADS Block (legacy имя сообщения DS Block) |
 | `FOCUS_BLOCKER_DEVICE_SECURITY_SETTINGS` | Device Security |
 | `FOCUS_BLOCKER_THREAT_SHIELD_SETTINGS` | Threat Shield: объединённые настройки и встроенные списки паттернов / хвостов TLD |
 
@@ -134,7 +137,7 @@ MAIN-скрипт может запросить переотправку: `FOCUS
 * `src/security.js`, `src/security-worker.js` — анти‑фингерпринт
 * `src/network-security.js` — перехваты fetch/XHR/WebSocket и др. в рамках настроек
 * `src/device-security.js` — API устройства и хранилищ
-* `src/ds-block.js` — попапы, телеметрия, косметика (совместно с background)
+* `src/ds-block.js` — ADS Block: попапы, телеметрия, косметика (совместно с background)
 * `src/copy-helper.js` — копирование
 * `src/threat-shield.js` — баннер и эвристики Threat Shield (в манифесте подключён только к главному фрейму страницы, `all_frames: false`)
 

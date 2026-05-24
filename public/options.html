@@ -20,13 +20,25 @@
           Исключённые домены
           <span class="nav-item-desc">Где расширение отключено</span>
         </button>
-        <button type="button" class="nav-item" data-panel="panel-stats">
-          Статистика
-          <span class="nav-item-desc">Блокировки и подмены по доменам</span>
+        <button type="button" class="nav-item" data-panel="panel-focus">
+          Фокус блокер
+          <span class="nav-item-desc">События фокуса и видимость вкладки</span>
+        </button>
+        <button type="button" class="nav-item" data-panel="panel-copy">
+          Помощник при копировании
+          <span class="nav-item-desc">Подсветка и выделение для копирования</span>
+        </button>
+        <button type="button" class="nav-item" data-panel="panel-threat-shield">
+          Активная интернет защита
+          <span class="nav-item-desc">HTTP, подозрительные домены, редиректы</span>
         </button>
         <button type="button" class="nav-item" data-panel="panel-security">
           Анти‑фингерпринт
           <span class="nav-item-desc">Подмена сигналов (screen/WebGL/Canvas…)</span>
+        </button>
+        <button type="button" class="nav-item" data-panel="panel-device-security">
+          Защита устройства
+          <span class="nav-item-desc">localStorage, IndexedDB, Cache API, камера/гео</span>
         </button>
         <button type="button" class="nav-item" data-panel="panel-network">
           Network Security
@@ -36,29 +48,17 @@
           Privacy pack
           <span class="nav-item-desc">DNR трекеры и настройки Chrome (Referer)</span>
         </button>
-        <button type="button" class="nav-item" data-panel="panel-device-security">
-          Device Security
-          <span class="nav-item-desc">localStorage, IndexedDB, Cache API, камера/гео</span>
-        </button>
         <button type="button" class="nav-item" data-panel="panel-ds-block">
-          DS Block
-          <span class="nav-item-desc">Попапы, баннеры, телеметрия</span>
+          ADS Block
+          <span class="nav-item-desc">Бывший DS Block — попапы, баннеры, телеметрия</span>
         </button>
-        <button type="button" class="nav-item" data-panel="panel-threat-shield">
-          Активная защита
-          <span class="nav-item-desc">Предупреждения по HTTP, домену, редиректам</span>
-        </button>
-        <button type="button" class="nav-item" data-panel="panel-focus">
-          Focus Blocker
-          <span class="nav-item-desc">События фокуса и вкладки</span>
+        <button type="button" class="nav-item" data-panel="panel-stats">
+          Статистика
+          <span class="nav-item-desc">Блокировки и подмены по доменам</span>
         </button>
         <button type="button" class="nav-item" data-panel="panel-accessibility">
           Доступность
           <span class="nav-item-desc">Анимации и сдержанный интерфейс</span>
-        </button>
-        <button type="button" class="nav-item" data-panel="panel-copy">
-          Копирование
-          <span class="nav-item-desc">Подсветка и рамка копирования</span>
         </button>
       </aside>
       <main class="main-area">
@@ -112,47 +112,250 @@
           </div>
         </div>
 
-        <div id="panel-stats" class="settings-panel">
+        <div id="panel-focus" class="settings-panel">
           <div class="panel-stack">
-            <section class="glass-card" aria-labelledby="panel-stats-h">
-              <h2 id="panel-stats-h" class="panel-head">Статистика</h2>
-              <p class="panel-head-desc">
-                Локальные суммы по доменам верхнего окна: насколько часто срабатывали блокировки и подмены (фокус, анти‑фингерпринт в JS,
-                сеть на странице, правила Declarative Net Request, Device Security, DS Block). Это не полный журнал посещений и не все сторонние
-                домены. Нажмите на строку с доменом, чтобы увидеть разбивку по функциям и подфункциям.
-              </p>
-              <div class="stats-toolbar first-in-card">
-                <button type="button" class="btn btn-danger" id="statsClearBtn">Очистить статистику</button>
+            <section class="glass-card" aria-labelledby="panel-focus-h">
+              <h2 id="panel-focus-h" class="panel-head">Фокус блокер</h2>
+              <p class="panel-head-desc">Какие события видимости вкладки и фокуса блокировать на страницах.</p>
+              <div class="setting-item first-in-card">
+                <div class="setting-label">
+                  <div>Модуль блокировки фокуса</div>
+                  <div class="setting-label-secondary">Отключите целиком, не меняя список событий ниже</div>
+                </div>
+                <div class="toggle active" id="focusBlockingEnabled">
+                  <div class="toggle-slider"></div>
+                </div>
               </div>
-              <div id="statsEmptyHint" class="stats-muted" style="display: none">
-                Пока нет данных — откройте страницы с включённым расширением и действующими модулями.
-              </div>
-              <div class="stats-table-wrap">
-                <table class="stats-table" aria-label="Статистика по доменам">
-                  <thead>
-                    <tr>
-                      <th>Домен</th>
-                      <th>Фокус</th>
-                      <th>Подмена FP</th>
-                      <th>Сеть (JS)</th>
-                      <th>DNR блок</th>
-                      <th>DNR заголовки</th>
-                      <th>Устройство</th>
-                      <th>DS</th>
-                      <th>Всего</th>
-                    </tr>
-                  </thead>
-                  <tbody id="statsTableBody"></tbody>
-                </table>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>Жёсткая подмена (lifecycle)</div>
+                  <div class="setting-label-secondary">
+                    По умолчанию выключено. Дополнительно блокирует события freeze, resume, pagehide, pageshow (в т.ч. обход через
+                    window.onpageshow и аналоги). Может мешать SPA и восстановлению из кэша назад/вперёд (bfcache).
+                  </div>
+                </div>
+                <div class="toggle" id="focusBlockingStrict">
+                  <div class="toggle-slider"></div>
+                </div>
               </div>
             </section>
-            <section class="glass-card stats-detail-card" aria-label="Разбивка по домену">
-              <div id="statsDomainDetail" class="stats-detail-panel" hidden>
-                <div class="stats-detail-head">
-                  <h3 id="statsDetailTitle" class="stats-detail-title"></h3>
-                  <button type="button" class="btn" id="statsDetailClose">Закрыть</button>
+
+            <section class="glass-card" aria-labelledby="focus-events-title">
+              <h3 id="focus-events-title" class="section-title">События</h3>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>visibilitychange</div>
+                  <div class="setting-label-secondary">Изменение видимости</div>
                 </div>
-                <div id="statsDetailBody" class="stats-detail-body"></div>
+                <div class="toggle active" data-event="visibilitychange">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>webkitvisibilitychange</div>
+                  <div class="setting-label-secondary">Изменение видимости (webkit)</div>
+                </div>
+                <div class="toggle active" data-event="webkitvisibilitychange">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>mozvisibilitychange</div>
+                  <div class="setting-label-secondary">Изменение видимости (moz)</div>
+                </div>
+                <div class="toggle active" data-event="mozvisibilitychange">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>msvisibilitychange</div>
+                  <div class="setting-label-secondary">Изменение видимости (ms)</div>
+                </div>
+                <div class="toggle active" data-event="msvisibilitychange">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>blur</div>
+                  <div class="setting-label-secondary">Потеря фокуса</div>
+                </div>
+                <div class="toggle active" data-event="blur">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>focus</div>
+                  <div class="setting-label-secondary">Получение фокуса</div>
+                </div>
+                <div class="toggle active" data-event="focus">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>focusin</div>
+                  <div class="setting-label-secondary">Вход фокуса</div>
+                </div>
+                <div class="toggle active" data-event="focusin">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>focusout</div>
+                  <div class="setting-label-secondary">Выход фокуса</div>
+                </div>
+                <div class="toggle active" data-event="focusout">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <div id="panel-copy" class="settings-panel">
+          <div class="panel-stack">
+            <section class="glass-card" aria-labelledby="panel-copy-h">
+              <h2 id="panel-copy-h" class="panel-head">Помощник при копировании</h2>
+              <p class="panel-head-desc">Подсветка под курсором и копирование текста в буфер обмена.</p>
+              <div class="setting-item first-in-card">
+                <div class="setting-label">
+                  <div>Enable Highlighting</div>
+                  <div class="setting-label-secondary">Включить подсветку</div>
+                </div>
+                <div class="toggle active" id="highlightEnabled">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+              <div class="setting-item" id="borderColorSettings">
+                <div class="setting-label">
+                  <div>Border Color</div>
+                  <div class="setting-label-secondary">Цвет рамки</div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px">
+                  <input type="color" id="borderColor" class="input-color" value="#4169E1" />
+                  <span id="borderColorValue" class="stats-muted" style="margin-top: 0">#4169E1</span>
+                </div>
+              </div>
+              <div class="setting-item" id="borderOpacitySettings">
+                <div class="setting-label">
+                  <div>Border Opacity</div>
+                  <div class="setting-label-secondary">Прозрачность рамки</div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px">
+                  <input type="range" id="borderOpacity" min="0" max="100" value="100" style="width: 120px; accent-color: var(--accent)" />
+                  <span id="borderOpacityValue" class="stats-muted" style="margin-top: 0; min-width: 40px">100%</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <div id="panel-threat-shield" class="settings-panel">
+          <div class="panel-stack">
+            <section class="glass-card" aria-labelledby="panel-threat-h">
+              <h2 id="panel-threat-h" class="panel-head">Активная интернет защита</h2>
+              <p class="panel-head-desc">
+                Красное предупреждение только в главном окне вкладки.
+                <strong>Важно:</strong> если тот же домен указан в разделе «Исключённые домены», расширение там полностью выключено —
+                предупреждение появится только после удаления этого домена из исключений (список «подозрительных доменов» от этого не включит
+                модуль сам по себе). Для SPA (VK и др.) баннер удерживается на странице и при необходимости восстанавливается. Локальные и приватные
+                адреса (localhost, 192.168.x.x) для проверки HTTP не считаются. Ложные срабатывания — белый список или отключение отдельных правил.
+              </p>
+              <div class="setting-item first-in-card">
+                <div class="setting-label">
+                  <div>Включить активную защиту</div>
+                  <div class="setting-label-secondary">Применяется только вне «Исключённые домены» и при глобально включённом расширении</div>
+                </div>
+                <div class="toggle" id="threatShieldEnabled">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="glass-card" aria-labelledby="threat-rules-title">
+              <h3 id="threat-rules-title" class="section-title">Условия предупреждения</h3>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>Страница по HTTP</div>
+                  <div class="setting-label-secondary">Не срабатывает на localhost и LAN (см. Network Security)</div>
+                </div>
+                <div class="toggle active" id="threatWarnHttp">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>Подозрительный домен (списки)</div>
+                  <div class="setting-label-secondary">Встроенные шаблоны (*.tk и др.) + ваши строки ниже</div>
+                </div>
+                <div class="toggle active" id="threatWarnList">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>«Двойной» домен (накладочный TLD)</div>
+                  <div class="setting-label-secondary">Шаблоны вроде example.com.ru, example.net.xyz (настраиваемые суффиксы из кода расширения)</div>
+                </div>
+                <div class="toggle active" id="threatWarnStackedTld">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>Очень длинное / шумное имя хоста</div>
+                  <div class="setting-label-secondary">Много меток или длинный/цифровой сегмент; по умолчанию выкл.</div>
+                </div>
+                <div class="toggle" id="threatWarnGarbageHost">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>Цепочка редиректов</div>
+                  <div class="setting-label-secondary">HTTP-редирект перед текущей страницей (Performance Navigation)</div>
+                </div>
+                <div class="toggle active" id="threatWarnRedirect">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="glass-card" aria-labelledby="threat-params-title">
+              <h3 id="threat-params-title" class="section-title">Параметры и списки</h3>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>Порог «мусорности» по числу меток в FQDN</div>
+                  <div class="setting-label-secondary">Срабатывание если меток не меньше этого числа (4–15, при включённой эвристике выше)</div>
+                </div>
+                <div style="min-width: 88px">
+                  <input type="number" id="threatGarbageMinLabels" class="input-number-inline" min="4" max="15" step="1" value="6" />
+                </div>
+              </div>
+              <div class="field-block" style="margin-top: 6px">
+                <div class="field-label">Доп. подозрительные домены и шаблоны (одна строка = один паттерн)</div>
+                <textarea id="threatShieldExtraHosts" class="input-textarea compact" placeholder="Примеры:&#10;evil-phish.example&#10;*.scam-login.net&#10;badsite.xyz"></textarea>
+                <div class="hint-warn-box">
+                  Если вы добавили здесь vk.com для теста, но домен уже в «Исключённые домены», баннер не появится — уберите его из исключений. Нужны
+                  включённые «Включить активную защиту», «Подозрительный домен (списки)», сохранение настроек и обновление страницы vk.com (Ctrl+F5).
+                </div>
+              </div>
+              <div class="field-block" style="margin-top: 14px">
+                <div class="field-label">Белый список (никогда не предупреждать, если совпало)</div>
+                <textarea
+                  id="threatShieldWhitelistHosts"
+                  class="input-textarea compact"
+                  placeholder="trusted.example.com&#10;*.mycompany.internal"
+                ></textarea>
+              </div>
+              <div class="toolbar-row" style="margin-top: 14px">
+                <button type="button" class="btn btn-danger" id="threatShieldResetDefaults">Сбросить активную защиту</button>
               </div>
             </section>
           </div>
@@ -161,7 +364,7 @@
         <div id="panel-security" class="settings-panel">
           <div class="panel-stack">
             <section class="glass-card" aria-labelledby="panel-security-h">
-              <h2 id="panel-security-h" class="panel-head">Анти‑фингерпринт (Security)</h2>
+              <h2 id="panel-security-h" class="panel-head">Анти‑фингерпринт</h2>
               <p class="panel-head-desc">
                 Подмена части браузерных «сигналов», которые часто используют для fingerprint. Некоторые пункты могут ломать сайты —
                 включайте только нужное. Для проверки «как на whoer» включите анти‑фингерпринт + Navigator/UA и перезагрузите страницу.
@@ -443,6 +646,100 @@
           </div>
         </div>
 
+        <div id="panel-device-security" class="settings-panel">
+          <div class="panel-stack">
+            <section class="glass-card" aria-labelledby="panel-device-h">
+              <h2 id="panel-device-h" class="panel-head">Защита устройства</h2>
+              <p class="panel-head-desc">
+                Жёсткая защита от извлечения/загрузки локальных данных и от попыток понять, есть ли у вас устройство/гео. Этот модуль может ломать сайты —
+                включайте, только если готовы к поломкам.
+              </p>
+              <div class="setting-item first-in-card">
+                <div class="setting-label">
+                  <div>Включить защиту устройства</div>
+                  <div class="setting-label-secondary">Применяется только вне доменов из «Исключённые домены»</div>
+                </div>
+                <div class="toggle" id="deviceSecurityEnabled">
+                  <div class="toggle-slider"></div>
+                </div>
+              </div>
+              <div class="reload-notice compact-top">
+                <svg fill="currentColor" viewBox="0 0 20 20" style="flex-shrink: 0">
+                  <path
+                    fill-rule="evenodd"
+                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                    clip-rule="evenodd"
+                  ></path>
+                </svg>
+                <div style="flex: 1">
+                  <div><strong>Важно</strong></div>
+                  <div style="margin-top: 6px">
+                    В режиме «жёстко» сайт может получать <code>undefined</code> вместо API и/или ошибки <code>SecurityError</code>. Это сделано намеренно, чтобы
+                    страница не успевала увидеть реальные данные.
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="glass-card" aria-labelledby="device-local-title">
+              <h3 id="device-local-title" class="section-title">Локальные данные</h3>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>Блокировать localStorage / sessionStorage</div>
+                  <div class="setting-label-secondary">Чтение/запись ключей из JS</div>
+                </div>
+                <div class="toggle active" id="deviceSecurityBlockStorage"><div class="toggle-slider"></div></div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>Блокировать IndexedDB</div>
+                  <div class="setting-label-secondary">indexedDB.open / deleteDatabase</div>
+                </div>
+                <div class="toggle active" id="deviceSecurityBlockIndexedDb"><div class="toggle-slider"></div></div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>Блокировать Cache API</div>
+                  <div class="setting-label-secondary">caches.* (Service Worker cache)</div>
+                </div>
+                <div class="toggle active" id="deviceSecurityBlockCacheApi"><div class="toggle-slider"></div></div>
+              </div>
+            </section>
+
+            <section class="glass-card" aria-labelledby="device-hardware-title">
+              <h3 id="device-hardware-title" class="section-title">Устройства</h3>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>Скрывать камеру/микрофон</div>
+                  <div class="setting-label-secondary">navigator.mediaDevices → как будто нет</div>
+                </div>
+                <div class="toggle active" id="deviceSecurityHideMediaDevices"><div class="toggle-slider"></div></div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>Скрывать геолокацию</div>
+                  <div class="setting-label-secondary">navigator.geolocation → как будто нет</div>
+                </div>
+                <div class="toggle active" id="deviceSecurityHideGeolocation"><div class="toggle-slider"></div></div>
+              </div>
+            </section>
+
+            <section class="glass-card" aria-labelledby="device-extra-title">
+              <h3 id="device-extra-title" class="section-title">Дополнительно</h3>
+              <div class="setting-item">
+                <div class="setting-label">
+                  <div>Lockdown (не давать странице откатить хуки)</div>
+                  <div class="setting-label-secondary">configurable/writable → максимально строго</div>
+                </div>
+                <div class="toggle active" id="deviceSecurityLockdown"><div class="toggle-slider"></div></div>
+              </div>
+              <div class="toolbar-row" style="margin-top: 12px">
+                <button type="button" class="btn btn-danger" id="deviceSecurityResetDefaults">Сбросить защиту устройства</button>
+              </div>
+            </section>
+          </div>
+        </div>
+
         <div id="panel-network" class="settings-panel">
           <div class="panel-stack">
             <section class="glass-card" aria-labelledby="panel-network-h">
@@ -546,7 +843,7 @@
             <section class="glass-card" aria-labelledby="panel-privacy-h">
               <h2 id="panel-privacy-h" class="panel-head">Privacy pack (Declarative Net Request)</h2>
               <p class="panel-head-desc">
-                Отдельно от DS Block: только сетевая блокировка малого списка сторонних трекер‑доменов (без косметики и попапов). Работает вне доменов
+                Отдельно от ADS Block: только сетевая блокировка малого списка сторонних трекер‑доменов (без косметики и попапов). Работает вне доменов
                 из раздела «Исключённые домены». Типы ресурсов по умолчанию узкие (script / XHR / ping) — см. переключатель ниже.
               </p>
               <div class="setting-item first-in-card">
@@ -561,7 +858,7 @@
               <div class="setting-item">
                 <div class="setting-label">
                   <div>Расширенный набор типов запросов</div>
-                  <div class="setting-label-secondary">Как блок телеметрии в DS Block (iframes, image, websocket…). Выше шанс поломать сайты</div>
+                  <div class="setting-label-secondary">Как блок телеметрии в ADS Block (iframes, image, websocket…). Выше шанс поломать сайты</div>
                 </div>
                 <div class="toggle" id="privacyPackWideResourceTypes">
                   <div class="toggle-slider"></div>
@@ -618,112 +915,18 @@
           </div>
         </div>
 
-        <div id="panel-device-security" class="settings-panel">
-          <div class="panel-stack">
-            <section class="glass-card" aria-labelledby="panel-device-h">
-              <h2 id="panel-device-h" class="panel-head">Device Security</h2>
-              <p class="panel-head-desc">
-                Жёсткая защита от извлечения/загрузки локальных данных и от попыток понять, есть ли у вас устройство/гео. Этот модуль может ломать сайты —
-                включайте, только если готовы к поломкам.
-              </p>
-              <div class="setting-item first-in-card">
-                <div class="setting-label">
-                  <div>Включить Device Security</div>
-                  <div class="setting-label-secondary">Применяется только вне доменов из «Исключённые домены»</div>
-                </div>
-                <div class="toggle" id="deviceSecurityEnabled">
-                  <div class="toggle-slider"></div>
-                </div>
-              </div>
-              <div class="reload-notice compact-top">
-                <svg fill="currentColor" viewBox="0 0 20 20" style="flex-shrink: 0">
-                  <path
-                    fill-rule="evenodd"
-                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                    clip-rule="evenodd"
-                  ></path>
-                </svg>
-                <div style="flex: 1">
-                  <div><strong>Важно</strong></div>
-                  <div style="margin-top: 6px">
-                    В режиме «жёстко» сайт может получать <code>undefined</code> вместо API и/или ошибки <code>SecurityError</code>. Это сделано намеренно, чтобы
-                    страница не успевала увидеть реальные данные.
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section class="glass-card" aria-labelledby="device-local-title">
-              <h3 id="device-local-title" class="section-title">Локальные данные</h3>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>Блокировать localStorage / sessionStorage</div>
-                  <div class="setting-label-secondary">Чтение/запись ключей из JS</div>
-                </div>
-                <div class="toggle active" id="deviceSecurityBlockStorage"><div class="toggle-slider"></div></div>
-              </div>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>Блокировать IndexedDB</div>
-                  <div class="setting-label-secondary">indexedDB.open / deleteDatabase</div>
-                </div>
-                <div class="toggle active" id="deviceSecurityBlockIndexedDb"><div class="toggle-slider"></div></div>
-              </div>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>Блокировать Cache API</div>
-                  <div class="setting-label-secondary">caches.* (Service Worker cache)</div>
-                </div>
-                <div class="toggle active" id="deviceSecurityBlockCacheApi"><div class="toggle-slider"></div></div>
-              </div>
-            </section>
-
-            <section class="glass-card" aria-labelledby="device-hardware-title">
-              <h3 id="device-hardware-title" class="section-title">Устройства</h3>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>Скрывать камеру/микрофон</div>
-                  <div class="setting-label-secondary">navigator.mediaDevices → как будто нет</div>
-                </div>
-                <div class="toggle active" id="deviceSecurityHideMediaDevices"><div class="toggle-slider"></div></div>
-              </div>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>Скрывать геолокацию</div>
-                  <div class="setting-label-secondary">navigator.geolocation → как будто нет</div>
-                </div>
-                <div class="toggle active" id="deviceSecurityHideGeolocation"><div class="toggle-slider"></div></div>
-              </div>
-            </section>
-
-            <section class="glass-card" aria-labelledby="device-extra-title">
-              <h3 id="device-extra-title" class="section-title">Дополнительно</h3>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>Lockdown (не давать странице откатить хуки)</div>
-                  <div class="setting-label-secondary">configurable/writable → максимально строго</div>
-                </div>
-                <div class="toggle active" id="deviceSecurityLockdown"><div class="toggle-slider"></div></div>
-              </div>
-              <div class="toolbar-row" style="margin-top: 12px">
-                <button type="button" class="btn btn-danger" id="deviceSecurityResetDefaults">Сбросить Device Security</button>
-              </div>
-            </section>
-          </div>
-        </div>
-
         <div id="panel-ds-block" class="settings-panel">
           <div class="panel-stack">
             <section class="glass-card" aria-labelledby="panel-ds-h">
-              <h2 id="panel-ds-h" class="panel-head">DS Block</h2>
+              <h2 id="panel-ds-h" class="panel-head">ADS Block</h2>
               <p class="panel-head-desc">
-                Блокировка всплывающих окон, рекламных баннеров и части телеметрии. Этот модуль может ломать логин/виджеты/аналитику на сайтах —
-                включайте точечно и используйте «Исключённые домены» при проблемах. Встроенные CSS-правила для типичной рекламы (AdSense, GPT, частые
+                Ранее модуль «DS Block». Блокировка всплывающих окон, рекламных баннеров и части телеметрии. Может ломать логин/виджеты/аналитику —
+                включайте точечно и используйте «Исключённые домены» при проблемах. Встроенные CSS‑правила для типичной рекламы (AdSense, GPT, частые
                 сети) расширены, но не заменяют полноценный блокировщик — под свою вёрстку добавляйте селекторы ниже.
               </p>
               <div class="setting-item first-in-card">
                 <div class="setting-label">
-                  <div>Включить DS Block</div>
+                  <div>Включить ADS Block</div>
                   <div class="setting-label-secondary">Применяется только вне доменов из «Исключённые домены»</div>
                 </div>
                 <div class="toggle" id="dsBlockEnabled">
@@ -801,206 +1004,53 @@
                 </div>
               </div>
               <div class="toolbar-row" style="margin-top: 14px">
-                <button type="button" class="btn btn-danger" id="dsBlockResetDefaults">Сбросить DS Block</button>
+                <button type="button" class="btn btn-danger" id="dsBlockResetDefaults">Сбросить ADS Block</button>
               </div>
             </section>
           </div>
         </div>
 
-        <div id="panel-threat-shield" class="settings-panel">
+        <div id="panel-stats" class="settings-panel">
           <div class="panel-stack">
-            <section class="glass-card" aria-labelledby="panel-threat-h">
-              <h2 id="panel-threat-h" class="panel-head">Активная защита на странице</h2>
+            <section class="glass-card" aria-labelledby="panel-stats-h">
+              <h2 id="panel-stats-h" class="panel-head">Статистика</h2>
               <p class="panel-head-desc">
-                Красное предупреждение только в главном окне вкладки.
-                <strong>Важно:</strong> если тот же домен указан в разделе «Исключённые домены», расширение там полностью выключено —
-                предупреждение появится только после удаления этого домена из исключений (список «подозрительных доменов» от этого не включит
-                модуль сам по себе). Для SPA (VK и др.) баннер удерживается на странице и при необходимости восстанавливается. Локальные и приватные
-                адреса (localhost, 192.168.x.x) для проверки HTTP не считаются. Ложные срабатывания — белый список или отключение отдельных правил.
+                Локальные суммы по доменам верхнего окна: насколько часто срабатывали блокировки и подмены (фокус, анти‑фингерпринт в JS,
+                сеть на странице, правила Declarative Net Request, защита устройства, ADS Block). Это не полный журнал посещений и не все сторонние
+                домены. Нажмите на строку с доменом, чтобы увидеть разбивку по функциям и подфункциям.
               </p>
-              <div class="setting-item first-in-card">
-                <div class="setting-label">
-                  <div>Включить активную защиту</div>
-                  <div class="setting-label-secondary">Применяется только вне «Исключённые домены» и при глобально включённом расширении</div>
-                </div>
-                <div class="toggle" id="threatShieldEnabled">
-                  <div class="toggle-slider"></div>
-                </div>
+              <div class="stats-toolbar first-in-card">
+                <button type="button" class="btn btn-danger" id="statsClearBtn">Очистить статистику</button>
+              </div>
+              <div id="statsEmptyHint" class="stats-muted" style="display: none">
+                Пока нет данных — откройте страницы с включённым расширением и действующими модулями.
+              </div>
+              <div class="stats-table-wrap">
+                <table class="stats-table" aria-label="Статистика по доменам">
+                  <thead>
+                    <tr>
+                      <th>Домен</th>
+                      <th>Фокус</th>
+                      <th>Подмена FP</th>
+                      <th>Сеть (JS)</th>
+                      <th>DNR блок</th>
+                      <th>DNR заголовки</th>
+                      <th>Устройство</th>
+                      <th>ADS</th>
+                      <th>Всего</th>
+                    </tr>
+                  </thead>
+                  <tbody id="statsTableBody"></tbody>
+                </table>
               </div>
             </section>
-
-            <section class="glass-card" aria-labelledby="threat-rules-title">
-              <h3 id="threat-rules-title" class="section-title">Условия предупреждения</h3>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>Страница по HTTP</div>
-                  <div class="setting-label-secondary">Не срабатывает на localhost и LAN (см. Network Security)</div>
+            <section class="glass-card stats-detail-card" aria-label="Разбивка по домену">
+              <div id="statsDomainDetail" class="stats-detail-panel" hidden>
+                <div class="stats-detail-head">
+                  <h3 id="statsDetailTitle" class="stats-detail-title"></h3>
+                  <button type="button" class="btn" id="statsDetailClose">Закрыть</button>
                 </div>
-                <div class="toggle active" id="threatWarnHttp">
-                  <div class="toggle-slider"></div>
-                </div>
-              </div>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>Подозрительный домен (списки)</div>
-                  <div class="setting-label-secondary">Встроенные шаблоны (*.tk и др.) + ваши строки ниже</div>
-                </div>
-                <div class="toggle active" id="threatWarnList">
-                  <div class="toggle-slider"></div>
-                </div>
-              </div>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>«Двойной» домен (накладочный TLD)</div>
-                  <div class="setting-label-secondary">Шаблоны вроде example.com.ru, example.net.xyz (настраиваемые суффиксы из кода расширения)</div>
-                </div>
-                <div class="toggle active" id="threatWarnStackedTld">
-                  <div class="toggle-slider"></div>
-                </div>
-              </div>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>Очень длинное / шумное имя хоста</div>
-                  <div class="setting-label-secondary">Много меток или длинный/цифровой сегмент; по умолчанию выкл.</div>
-                </div>
-                <div class="toggle" id="threatWarnGarbageHost">
-                  <div class="toggle-slider"></div>
-                </div>
-              </div>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>Цепочка редиректов</div>
-                  <div class="setting-label-secondary">HTTP-редирект перед текущей страницей (Performance Navigation)</div>
-                </div>
-                <div class="toggle active" id="threatWarnRedirect">
-                  <div class="toggle-slider"></div>
-                </div>
-              </div>
-            </section>
-
-            <section class="glass-card" aria-labelledby="threat-params-title">
-              <h3 id="threat-params-title" class="section-title">Параметры и списки</h3>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>Порог «мусорности» по числу меток в FQDN</div>
-                  <div class="setting-label-secondary">Срабатывание если меток не меньше этого числа (4–15, при включённой эвристике выше)</div>
-                </div>
-                <div style="min-width: 88px">
-                  <input type="number" id="threatGarbageMinLabels" class="input-number-inline" min="4" max="15" step="1" value="6" />
-                </div>
-              </div>
-              <div class="field-block" style="margin-top: 6px">
-                <div class="field-label">Доп. подозрительные домены и шаблоны (одна строка = один паттерн)</div>
-                <textarea id="threatShieldExtraHosts" class="input-textarea compact" placeholder="Примеры:&#10;evil-phish.example&#10;*.scam-login.net&#10;badsite.xyz"></textarea>
-                <div class="hint-warn-box">
-                  Если вы добавили здесь vk.com для теста, но домен уже в «Исключённые домены», баннер не появится — уберите его из исключений. Нужны
-                  включённые «Включить активную защиту», «Подозрительный домен (списки)», сохранение настроек и обновление страницы vk.com (Ctrl+F5).
-                </div>
-              </div>
-              <div class="field-block" style="margin-top: 14px">
-                <div class="field-label">Белый список (никогда не предупреждать, если совпало)</div>
-                <textarea
-                  id="threatShieldWhitelistHosts"
-                  class="input-textarea compact"
-                  placeholder="trusted.example.com&#10;*.mycompany.internal"
-                ></textarea>
-              </div>
-              <div class="toolbar-row" style="margin-top: 14px">
-                <button type="button" class="btn btn-danger" id="threatShieldResetDefaults">Сбросить активную защиту</button>
-              </div>
-            </section>
-          </div>
-        </div>
-
-        <div id="panel-focus" class="settings-panel">
-          <div class="panel-stack">
-            <section class="glass-card" aria-labelledby="panel-focus-h">
-              <h2 id="panel-focus-h" class="panel-head">Focus Blocker</h2>
-              <p class="panel-head-desc">Какие события видимости вкладки и фокуса блокировать на страницах.</p>
-              <div class="setting-item first-in-card">
-                <div class="setting-label">
-                  <div>Модуль блокировки фокуса</div>
-                  <div class="setting-label-secondary">Отключите целиком, не меняя список событий ниже</div>
-                </div>
-                <div class="toggle active" id="focusBlockingEnabled">
-                  <div class="toggle-slider"></div>
-                </div>
-              </div>
-            </section>
-
-            <section class="glass-card" aria-labelledby="focus-events-title">
-              <h3 id="focus-events-title" class="section-title">События</h3>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>visibilitychange</div>
-                  <div class="setting-label-secondary">Изменение видимости</div>
-                </div>
-                <div class="toggle active" data-event="visibilitychange">
-                  <div class="toggle-slider"></div>
-                </div>
-              </div>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>webkitvisibilitychange</div>
-                  <div class="setting-label-secondary">Изменение видимости (webkit)</div>
-                </div>
-                <div class="toggle active" data-event="webkitvisibilitychange">
-                  <div class="toggle-slider"></div>
-                </div>
-              </div>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>mozvisibilitychange</div>
-                  <div class="setting-label-secondary">Изменение видимости (moz)</div>
-                </div>
-                <div class="toggle active" data-event="mozvisibilitychange">
-                  <div class="toggle-slider"></div>
-                </div>
-              </div>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>msvisibilitychange</div>
-                  <div class="setting-label-secondary">Изменение видимости (ms)</div>
-                </div>
-                <div class="toggle active" data-event="msvisibilitychange">
-                  <div class="toggle-slider"></div>
-                </div>
-              </div>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>blur</div>
-                  <div class="setting-label-secondary">Потеря фокуса</div>
-                </div>
-                <div class="toggle active" data-event="blur">
-                  <div class="toggle-slider"></div>
-                </div>
-              </div>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>focus</div>
-                  <div class="setting-label-secondary">Получение фокуса</div>
-                </div>
-                <div class="toggle active" data-event="focus">
-                  <div class="toggle-slider"></div>
-                </div>
-              </div>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>focusin</div>
-                  <div class="setting-label-secondary">Вход фокуса</div>
-                </div>
-                <div class="toggle active" data-event="focusin">
-                  <div class="toggle-slider"></div>
-                </div>
-              </div>
-              <div class="setting-item">
-                <div class="setting-label">
-                  <div>focusout</div>
-                  <div class="setting-label-secondary">Выход фокуса</div>
-                </div>
-                <div class="toggle active" data-event="focusout">
-                  <div class="toggle-slider"></div>
-                </div>
+                <div id="statsDetailBody" class="stats-detail-body"></div>
               </div>
             </section>
           </div>
@@ -1021,44 +1071,6 @@
                 </div>
                 <div class="toggle" id="optionsReduceAnimations">
                   <div class="toggle-slider"></div>
-                </div>
-              </div>
-            </section>
-          </div>
-        </div>
-
-        <div id="panel-copy" class="settings-panel">
-          <div class="panel-stack">
-            <section class="glass-card" aria-labelledby="panel-copy-h">
-              <h2 id="panel-copy-h" class="panel-head">Копирование</h2>
-              <p class="panel-head-desc">Подсветка под курсором и копирование текста в буфер обмена.</p>
-              <div class="setting-item first-in-card">
-                <div class="setting-label">
-                  <div>Enable Highlighting</div>
-                  <div class="setting-label-secondary">Включить подсветку</div>
-                </div>
-                <div class="toggle active" id="highlightEnabled">
-                  <div class="toggle-slider"></div>
-                </div>
-              </div>
-              <div class="setting-item" id="borderColorSettings">
-                <div class="setting-label">
-                  <div>Border Color</div>
-                  <div class="setting-label-secondary">Цвет рамки</div>
-                </div>
-                <div style="display: flex; align-items: center; gap: 10px">
-                  <input type="color" id="borderColor" class="input-color" value="#4169E1" />
-                  <span id="borderColorValue" class="stats-muted" style="margin-top: 0">#4169E1</span>
-                </div>
-              </div>
-              <div class="setting-item" id="borderOpacitySettings">
-                <div class="setting-label">
-                  <div>Border Opacity</div>
-                  <div class="setting-label-secondary">Прозрачность рамки</div>
-                </div>
-                <div style="display: flex; align-items: center; gap: 10px">
-                  <input type="range" id="borderOpacity" min="0" max="100" value="100" style="width: 120px; accent-color: var(--accent)" />
-                  <span id="borderOpacityValue" class="stats-muted" style="margin-top: 0; min-width: 40px">100%</span>
                 </div>
               </div>
             </section>

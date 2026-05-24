@@ -22,6 +22,7 @@ const STORAGE_GET_KEYS = [
   "excludedDomains",
   "extensionGloballyEnabled",
   "focusBlockingEnabled",
+  "focusBlockingStrict",
   "optionsReduceAnimations",
   // UI-only helper: remember the last selected Navigator/UA preset
   "securityNavPresetId",
@@ -47,7 +48,7 @@ const STATS_CATEGORY_TITLE = {
   dnrBlock: "Declarative Net Request — блокировка",
   dnrModify: "Declarative Net Request — подмена заголовков",
   device: "Device Security",
-  ds: "DS Block (попапы и телеметрия)",
+  ds: "ADS Block (блок рекламы и телеметрии)",
 };
 
 /** Человекочитаемые названия подфункций (ключ — код из расширения). */
@@ -59,6 +60,10 @@ const STATS_SUB_LABELS = {
     document_hasFocus_spoof: "Подфункция: document.hasFocus() всегда true",
     window_focus_suppressed: "Подфункция: window.focus() подавлен",
     window_blur_suppressed: "Подфункция: window.blur() подавлен",
+    inline_handler_onpageshow: "Подфункция (strict): скрытие window.onpageshow",
+    inline_handler_onpagehide: "Подфункция (strict): скрытие window.onpagehide",
+    inline_handler_onfreeze: "Подфункция (strict): скрытие document.onfreeze",
+    inline_handler_onresume: "Подфункция (strict): скрытие document.onresume",
     _other: "Прочие события фокуса",
   },
   fpSpoof: {
@@ -124,29 +129,31 @@ const STATS_SUB_LABELS = {
 };
 
 function statsHumanSubLabel(cat, sk) {
+  const skSafe = String(sk == null ? "" : sk);
   const map = STATS_SUB_LABELS[cat];
-  if (map && map[sk]) return map[sk];
-  if (sk.startsWith("capture_DOM_")) {
-    const ev = sk.slice("capture_DOM_".length);
+  if (map && map[skSafe]) return map[skSafe];
+  if (skSafe.startsWith("capture_DOM_")) {
+    const ev = skSafe.slice("capture_DOM_".length);
     return `Подфункция: перехват фазы захвата DOM для события «${ev}»`;
   }
-  if (sk.startsWith("document_visibility_")) {
-    const p = sk.slice("document_visibility_".length);
+  if (skSafe.startsWith("document_visibility_")) {
+    const p = skSafe.slice("document_visibility_".length);
     return `Подфункция: подмена чтения document.${p}`;
   }
-  if (sk.startsWith("inline_handler_")) {
-    return `Подфункция: скрытие inline handler ${sk.slice("inline_handler_".length)}`;
+  if (skSafe.startsWith("inline_handler_")) {
+    return `Подфункция: скрытие inline handler ${skSafe.slice("inline_handler_".length)}`;
   }
-  if (sk.startsWith("embed_") && sk.includes("_assign_blocked")) return `Подфункция: блок назначения URL (${sk})`;
-  if (sk.startsWith("embed_setAttribute_")) return `Подфункция: блок setAttribute (${sk})`;
-  if (sk.startsWith("network_regex_slot_"))
-    return `Подфункция: блокировка по правилу Network Security (слот ${sk.slice("network_regex_slot_".length)})`;
-  if (sk.startsWith("ds_telemetry_slot_"))
-    return `Подфункция: блок телеметрии по слоту ${sk.slice("ds_telemetry_slot_".length)}`;
-  if (sk.startsWith("privacy_pack_slot_"))
-    return `Подфункция: Privacy pack — блок по слоту ${sk.slice("privacy_pack_slot_".length)}`;
-  if (sk.startsWith("rule_")) return `Подфункция: срабатывание правила DNR id=${sk.slice(5)}`;
-  return `Подфункция: ${sk.replace(/_/g, " ")}`;
+  if (skSafe.startsWith("embed_") && skSafe.includes("_assign_blocked"))
+    return `Подфункция: блок назначения URL (${skSafe})`;
+  if (skSafe.startsWith("embed_setAttribute_")) return `Подфункция: блок setAttribute (${skSafe})`;
+  if (skSafe.startsWith("network_regex_slot_"))
+    return `Подфункция: блокировка по правилу Network Security (слот ${skSafe.slice("network_regex_slot_".length)})`;
+  if (skSafe.startsWith("ds_telemetry_slot_"))
+    return `Подфункция: блок телеметрии по слоту ${skSafe.slice("ds_telemetry_slot_".length)}`;
+  if (skSafe.startsWith("privacy_pack_slot_"))
+    return `Подфункция: Privacy pack — блок по слоту ${skSafe.slice("privacy_pack_slot_".length)}`;
+  if (skSafe.startsWith("rule_")) return `Подфункция: срабатывание правила DNR id=${skSafe.slice(5)}`;
+  return `Подфункция: ${skSafe.replace(/_/g, " ")}`;
 }
 
 function hideStatsDetail() {
@@ -947,7 +954,13 @@ function collectSecurityPayload() {
 
 function getStorageArea() {
   // `sync` can be unavailable/limited in some Chromium forks; use `local` as the canonical store.
-  return (chrome.storage && chrome.storage.local) || chrome.storage.sync;
+  try {
+    const s = typeof chrome !== "undefined" ? chrome.storage : undefined;
+    if (!s) return null;
+    return s.local || s.sync || null;
+  } catch (_e) {
+    return null;
+  }
 }
 
 function maybeMigrateSyncToLocal(keys, done) {
@@ -1011,6 +1024,7 @@ function applyOptionsFromStorageResult(result) {
 
   setToggleActive("extensionGloballyEnabled", result.extensionGloballyEnabled !== false);
   setToggleActive("focusBlockingEnabled", result.focusBlockingEnabled !== false);
+  setToggleActive("focusBlockingStrict", result.focusBlockingStrict === true);
   setToggleActive("optionsReduceAnimations", !!result.optionsReduceAnimations);
   syncReduceMotionClassFromToggle();
 
@@ -1039,7 +1053,12 @@ function applyOptionsFromStorageResult(result) {
 }
 
 maybeMigrateSyncToLocal(STORAGE_GET_KEYS, () => {
-  getStorageArea().get(STORAGE_GET_KEYS, (result) => {
+  const area = getStorageArea();
+  if (!area || typeof area.get !== "function") {
+    applyOptionsFromStorageResult({});
+    return;
+  }
+  area.get(STORAGE_GET_KEYS, (result) => {
     void chrome.runtime.lastError;
     applyOptionsFromStorageResult(result || {});
   });
@@ -1052,7 +1071,7 @@ document.querySelectorAll(".toggle[data-event]").forEach((toggle) => {
   });
 });
 
-["extensionGloballyEnabled", "focusBlockingEnabled", "optionsReduceAnimations"].forEach((id) => {
+["extensionGloballyEnabled", "focusBlockingEnabled", "focusBlockingStrict", "optionsReduceAnimations"].forEach((id) => {
   const el = document.getElementById(id);
   if (!el) return;
   el.addEventListener("click", () => {
@@ -1469,6 +1488,7 @@ function buildSettingsPayload() {
     excludedDomains,
     extensionGloballyEnabled: toggleActive("extensionGloballyEnabled"),
     focusBlockingEnabled: toggleActive("focusBlockingEnabled"),
+    focusBlockingStrict: toggleActive("focusBlockingStrict"),
     optionsReduceAnimations: toggleActive("optionsReduceAnimations"),
     securityNavPresetId: document.getElementById("securityNavPreset")?.value || "none",
     ...sec,
@@ -1507,7 +1527,13 @@ function flushSaveNow() {
   savingInFlight = true;
   const payload = buildSettingsPayload();
 
-  getStorageArea().set(payload, () => {
+  const area = getStorageArea();
+  if (!area || typeof area.set !== "function") {
+    savingInFlight = false;
+    return;
+  }
+
+  area.set(payload, () => {
     const err = chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError : null;
     if (err) {
       // Keep UI quiet, but don't lose future saves.
@@ -1561,7 +1587,9 @@ function refreshStatsPanel() {
   const tbody = document.getElementById("statsTableBody");
   const emptyHint = document.getElementById("statsEmptyHint");
   if (!tbody) return;
-  getStorageArea().get([STATS_STORAGE_KEY], (r) => {
+  const area = getStorageArea();
+  if (!area || typeof area.get !== "function") return;
+  area.get([STATS_STORAGE_KEY], (r) => {
     void chrome.runtime.lastError;
     const raw = r && r[STATS_STORAGE_KEY];
     const byHost = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
@@ -1628,7 +1656,9 @@ function refreshStatsPanel() {
   const clearBtn = document.getElementById("statsClearBtn");
   if (clearBtn) {
     clearBtn.addEventListener("click", () => {
-      getStorageArea().set({ [STATS_STORAGE_KEY]: {} }, () => {
+      const area = getStorageArea();
+      if (!area || typeof area.set !== "function") return;
+      area.set({ [STATS_STORAGE_KEY]: {} }, () => {
         void chrome.runtime.lastError;
         hideStatsDetail();
         refreshStatsPanel();

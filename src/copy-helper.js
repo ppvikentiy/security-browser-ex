@@ -15,7 +15,13 @@
 
   function getStorageArea() {
     // `sync` can be unavailable/limited in some Chromium forks; use `local` as the canonical store.
-    return (chrome.storage && chrome.storage.local) || chrome.storage.sync;
+    try {
+      const s = typeof chrome !== "undefined" ? chrome.storage : undefined;
+      if (!s) return null;
+      return s.local || s.sync || null;
+    } catch (_e) {
+      return null;
+    }
   }
 
   function maybeMigrateSyncToLocal(keys, done) {
@@ -44,7 +50,8 @@
   }
 
   function refreshFromStorage() {
-    getStorageArea().get(STORAGE_KEYS, (result) => {
+    const area = getStorageArea();
+    function apply(result) {
       highlightEnabled = result.highlightEnabled !== undefined ? result.highlightEnabled : DEFAULT_HIGHLIGHT_ENABLED;
       borderColor = result.borderColor || DEFAULT_BORDER_COLOR;
       borderOpacity = result.borderOpacity !== undefined ? result.borderOpacity : DEFAULT_BORDER_OPACITY;
@@ -52,6 +59,14 @@
       const excludedDomains = normalizeExcludedDomainsListFromStorage(rawExcluded);
       isEnabled = !isExcluded(excludedDomains);
       updateStyles();
+    }
+    if (!area || typeof area.get !== "function") {
+      apply({});
+      return;
+    }
+    area.get(STORAGE_KEYS, (result) => {
+      void chrome.runtime.lastError;
+      apply(result || {});
     });
   }
 
@@ -59,28 +74,49 @@
     refreshFromStorage();
   });
 
-  chrome.storage.onChanged.addListener((changes, namespace) => {
-    if (namespace !== "local" && namespace !== "sync") return;
-    if (!changes || !Object.keys(changes).length) return;
-    refreshFromStorage();
-  });
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener((changes, namespace) => {
+        if (namespace !== "local" && namespace !== "sync") return;
+        if (!changes || !Object.keys(changes).length) return;
+        refreshFromStorage();
+      });
+    }
+  } catch (_e) {}
 
   const style = document.createElement("style");
   const className = `highlight_asdfqweafsdfa`;
-  function hexToRgba(hex, alpha) {
+
+  /** @returns {boolean} */
+  function isValidHexColor(hex) {
+    return typeof hex === "string" && /^#[0-9A-Fa-f]{6}$/.test(hex);
+  }
+
+  /** @param {string} hex @returns {{ r: number, g: number, b: number } | null} */
+  function parseHexRgb(hex) {
+    if (!isValidHexColor(hex)) return null;
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
+    if (![r, g, b].every((n) => Number.isFinite(n))) return null;
+    return { r, g, b };
+  }
+
+  function hexToRgba(hex, alpha) {
+    const rgb = parseHexRgb(hex) || parseHexRgb(DEFAULT_BORDER_COLOR);
+    if (!rgb) return `rgba(65, 105, 225, ${alpha})`;
+    const { r, g, b } = rgb;
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
   function updateStyles() {
-    const borderOpacityValue = borderOpacity / 100;
+    const borderOpacityValue = Math.min(1, Math.max(0, borderOpacity / 100));
+    const colorForOutline = isValidHexColor(borderColor) ? borderColor : DEFAULT_BORDER_COLOR;
 
     if (isEnabled && (highlightEnabled || borderOpacityValue > 0)) {
       style.textContent = `
         .${className} {
-          outline: 2px solid ${hexToRgba(borderColor, borderOpacityValue)} !important;
+          outline: 2px solid ${hexToRgba(colorForOutline, borderOpacityValue)} !important;
         }
       `;
     } else {
@@ -167,13 +203,18 @@
         if (navigator.clipboard && window.isSecureContext) {
           await navigator.clipboard.writeText(textToCopy);
         } else {
+          const body = document.body;
+          if (!body) {
+            copyInProgress = false;
+            return;
+          }
           const textArea = document.createElement("textarea");
           textArea.value = textToCopy;
           textArea.style.position = "fixed";
           textArea.style.opacity = "0";
           textArea.style.left = "-9999px";
           textArea.style.top = "-9999px";
-          document.body.appendChild(textArea);
+          body.appendChild(textArea);
           textArea.focus();
           textArea.select();
 
@@ -183,7 +224,7 @@
             console.error("execCommand failed:", e);
           }
 
-          document.body.removeChild(textArea);
+          body.removeChild(textArea);
         }
 
         clearAllHighlights();

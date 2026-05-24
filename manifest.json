@@ -57,7 +57,7 @@
     },
     {
       "matches": ["*://*/*"],
-      "js": ["src/security-defaults.js", "src/threat-shield.js"],
+      "js": ["src/threat-shield.js"],
       "run_at": "document_start",
       "world": "MAIN",
       "match_about_blank": true,

@@ -129,6 +129,37 @@ const DEFAULT_BLOCKED_EVENTS = [
   "focusout",
 ];
 
+/** Доп. события при focusBlockingStrict (merge в effective blockedEvents, не в DEFAULT). */
+const STRICT_EXTRA_EVENTS = ["freeze", "resume", "pagehide", "pageshow"];
+
+function normalizeBlockedEventsListFromRaw(raw) {
+  const list = Array.isArray(raw) ? raw : DEFAULT_BLOCKED_EVENTS;
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; i < list.length; i++) {
+    const s = typeof list[i] === "string" ? list[i].trim().toLowerCase() : "";
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out.length ? out : DEFAULT_BLOCKED_EVENTS.slice();
+}
+
+function mergeEffectiveBlockedEvents(rawUserList, strictOn) {
+  const base = normalizeBlockedEventsListFromRaw(rawUserList);
+  if (!strictOn) return base;
+  const seen = new Set(base);
+  const out = base.slice();
+  for (let i = 0; i < STRICT_EXTRA_EVENTS.length; i++) {
+    const ev = STRICT_EXTRA_EVENTS[i];
+    if (!seen.has(ev)) {
+      seen.add(ev);
+      out.push(ev);
+    }
+  }
+  return out;
+}
+
 const DEFAULT_EXCLUDED_DOMAINS = [];
 
 /** Совпадает с ключом в background.js для паузы вкладки. */
@@ -149,7 +180,13 @@ function isExcluded(excludedDomains) {
 
 function getStorageArea() {
   // `sync` can be unavailable/limited in some Chromium forks; use `local` as the canonical store.
-  return (chrome.storage && chrome.storage.local) || chrome.storage.sync;
+  try {
+    const s = typeof chrome !== "undefined" ? chrome.storage : undefined;
+    if (!s) return null;
+    return s.local || s.sync || null;
+  } catch (_e) {
+    return null;
+  }
 }
 
 function maybeMigrateSyncToLocal(keys, done) {
@@ -392,7 +429,8 @@ function postDeviceSecuritySettings(result, pageAllowsModules) {
 }
 
 function broadcastAll(result) {
-  const blockedEvents = result.blockedEvents || DEFAULT_BLOCKED_EVENTS;
+  const focusStrict = result.focusBlockingStrict === true;
+  const blockedEvents = mergeEffectiveBlockedEvents(result.blockedEvents, focusStrict);
   const rawExcluded = Array.isArray(result.excludedDomains) ? result.excludedDomains : DEFAULT_EXCLUDED_DOMAINS;
   const excludedDomains = normalizeExcludedDomainsListFromStorage(rawExcluded);
   const globalOn = result.extensionGloballyEnabled !== false;
@@ -413,25 +451,51 @@ const ALL_KEYS = [
   "excludedDomains",
   "extensionGloballyEnabled",
   "focusBlockingEnabled",
+  "focusBlockingStrict",
   ...fbConcatModuleStorageKeys(),
 ];
 
 let lastResultSnapshot = null;
 
-function refreshStorageAndBroadcastFast() {
-  // 1) Fast path: broadcast immediately from storage snapshot (tabPaused default is false).
-  //    Avoid waiting for the MV3 background service worker wake-up on every reload.
-  getStorageArea().get(ALL_KEYS, (result) => {
-    lastResultSnapshot = result && typeof result === "object" ? result : {};
-    broadcastAll(lastResultSnapshot);
-  });
+/** Monotonic id so overlapping storage.get + sendMessage callbacks from older refreshes are ignored. */
+let refreshGeneration = 0;
 
-  // 2) In parallel, resolve per-tab pause state; if it changes, re-broadcast using the same snapshot.
-  chrome.runtime.sendMessage({ type: "FB_IS_TAB_PAUSED" }, (resp) => {
-    const paused = chrome.runtime.lastError ? false : !!(resp && resp.paused);
-    if (paused === tabPaused) return;
-    tabPaused = paused;
-    if (lastResultSnapshot) broadcastAll(lastResultSnapshot);
+/**
+ * Loads storage snapshot, then tab pause flag, then broadcasts once — same snapshot paired with same pause answer.
+ * Stale callbacks (superseded by a newer refresh) do not mutate `tabPaused` or post to MAIN.
+ */
+function refreshStorageAndBroadcastFast() {
+  const myGeneration = ++refreshGeneration;
+
+  function applyPauseThenBroadcast(snapshot) {
+    if (myGeneration !== refreshGeneration) return;
+
+    lastResultSnapshot = snapshot;
+
+    try {
+      chrome.runtime.sendMessage({ type: "FB_IS_TAB_PAUSED" }, (resp) => {
+        if (myGeneration !== refreshGeneration) return;
+        tabPaused = chrome.runtime.lastError ? false : !!(resp && resp.paused);
+        broadcastAll(snapshot);
+      });
+    } catch (_e) {
+      if (myGeneration !== refreshGeneration) return;
+      tabPaused = false;
+      broadcastAll(snapshot);
+    }
+  }
+
+  const area = getStorageArea();
+  if (!area || typeof area.get !== "function") {
+    applyPauseThenBroadcast({});
+    return;
+  }
+
+  area.get(ALL_KEYS, (result) => {
+    void chrome.runtime.lastError;
+    if (myGeneration !== refreshGeneration) return;
+    const snapshot = result && typeof result === "object" ? result : {};
+    applyPauseThenBroadcast(snapshot);
   });
 }
 

@@ -73,7 +73,13 @@ const STATS_TAB_FIELDS = ["focus", "fpSpoof", "netJs", "device", "ds", "dnrBlock
 
 function getStorageArea() {
   // `sync` can be unavailable/limited in some Chromium forks; use `local` as the canonical store.
-  return (chrome.storage && chrome.storage.local) || chrome.storage.sync;
+  try {
+    const s = typeof chrome !== "undefined" ? chrome.storage : undefined;
+    if (!s) return null;
+    return s.local || s.sync || null;
+  } catch (_e) {
+    return null;
+  }
 }
 
 function maybeMigrateSyncToLocal(keys, done) {
@@ -757,6 +763,7 @@ function reloadFromStorageSnapshot() {
 
   maybeMigrateSyncToLocal(keys, () => {
     const storage = getStorageArea();
+    if (!storage || typeof storage.get !== "function") return;
     storage.get(keys, (result) => {
       const excludedDomains = normalizeExcludedDomainsListFromStorage(
         Array.isArray(result.excludedDomains) ? result.excludedDomains : []
@@ -1069,6 +1076,10 @@ function persistHostStats(hostRaw, deltas, breakdownInc, done) {
     return;
   }
   const storage = getStorageArea();
+  if (!storage || typeof storage.get !== "function" || typeof storage.set !== "function") {
+    if (done) done();
+    return;
+  }
   storage.get([LOCAL_STATS_BY_HOST_KEY], (r) => {
     void chrome.runtime.lastError;
     const raw = r && r[LOCAL_STATS_BY_HOST_KEY];
