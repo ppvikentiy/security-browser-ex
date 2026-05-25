@@ -1,4 +1,5 @@
 ![Static Badge](https://img.shields.io/badge/Created_by-Vikentiy_Pachovskiy-brightgreen) 
+
 Created for [![Google Chrome](https://img.shields.io/badge/Google%20Chrome-4285F4?logo=GoogleChrome&logoColor=white)](#)
 
 > 📄 [English version](./README-EN.md)
