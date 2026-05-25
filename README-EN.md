@@ -1,4 +1,4 @@
-![Static Badge](https://img.shields.io/badge/Created_by-Vikentiy_Pachovskiy-brightgreen)
+![Static Badge](https://img.shields.io/badge/Created_by-Vikentiy_Pachovskiy-brightgreen) [![Google Chrome](https://img.shields.io/badge/Google%20Chrome-4285F4?logo=GoogleChrome&logoColor=white)](#)
 
 > 📄 [Русская версия](./README.md)
 
@@ -6,7 +6,7 @@
 
 # Browser Security
 
-![Browser Security](./assets/icon.svg)
+
 
 Chromium extension (Manifest V3): focus/visibility hardening, anti-fingerprinting, optional network and device privacy tools, **on-page caution banners** when heuristic checks trigger, statistics, accessibility toggles, and a dedicated **extension options page** ([`public/options.html`](./public/options.html); see `options_page` in [`manifest.json`](./manifest.json)). The toolbar popup offers quick toggles and an **«All settings…»** link.
 
