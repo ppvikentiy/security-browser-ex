@@ -100,6 +100,20 @@
     }
   }
 
+  function isIllegalInvocationError(err) {
+    if (!err) return false;
+    const msg = typeof err.message === "string" ? err.message : "";
+    return err.name === "TypeError" && /illegal invocation/i.test(msg);
+  }
+
+  function getMediaDevicesContext(self) {
+    const maybeCtx =
+      self && typeof self === "object" && typeof self.enumerateDevices === "function" && typeof self.getUserMedia === "function"
+        ? self
+        : navigator.mediaDevices;
+    return maybeCtx || null;
+  }
+
   /* ---------------- Storage (localStorage/sessionStorage) ---------------- */
   (function patchStorage() {
     if (typeof Storage === "undefined" || !Storage.prototype) return;
@@ -110,10 +124,9 @@
     }
 
     function guardWrite() {
-      if (enabled("deviceSecurityBlockStorage")) {
-        bumpDevice(1, "storage_write_throw");
-        throw makeSecurityError("[Focus Blocker Device Security] Storage disabled");
-      }
+      if (!enabled("deviceSecurityBlockStorage")) return false;
+      bumpDevice(1, "storage_write_block");
+      return true;
     }
 
     /** @type {Array<[string, Function]>} */
@@ -145,7 +158,7 @@
       [
         "setItem",
         function setItemShim(key, value) {
-          guardWrite();
+          if (guardWrite()) return undefined;
           // @ts-ignore
           return native.setItem.call(this, key, value);
         },
@@ -153,7 +166,7 @@
       [
         "removeItem",
         function removeItemShim(key) {
-          guardWrite();
+          if (guardWrite()) return undefined;
           // @ts-ignore
           return native.removeItem.call(this, key);
         },
@@ -161,7 +174,7 @@
       [
         "clear",
         function clearShim() {
-          guardWrite();
+          if (guardWrite()) return undefined;
           // @ts-ignore
           return native.clear.call(this);
         },
@@ -178,7 +191,19 @@
 
     methods.forEach(([name, fn]) => {
       try {
-        defineProp(Storage.prototype, name, maybeLockdownDesc({ configurable: true, writable: true, value: fn }));
+        // Accessor with no-op setter to avoid TypeError on page attempts to overwrite.
+        defineProp(
+          Storage.prototype,
+          name,
+          maybeLockdownDesc({
+            configurable: true,
+            enumerable: true,
+            get: () => fn,
+            set: () => {
+              bumpDeviceThrottled("storage_assign_block", 500, `storage_assign_${name}_ignored`);
+            },
+          })
+        );
       } catch (_e) {}
     });
 
@@ -312,7 +337,19 @@
               bumpDeviceThrottled("mediaEnum", 300, "mediaDevices_enumerateDevices_empty");
               return Promise.resolve([]);
             }
-            return nativeEnum.apply(this, arguments);
+            const ctx = getMediaDevicesContext(this);
+            if (!ctx) {
+              return Promise.resolve([]);
+            }
+            try {
+              return nativeEnum.apply(ctx, arguments);
+            } catch (e) {
+              if (isIllegalInvocationError(e)) {
+                bumpDeviceThrottled("mediaEnum", 300, "mediaDevices_enumerateDevices_safe_fallback");
+                return Promise.resolve([]);
+              }
+              throw e;
+            }
           };
           defineProp(MediaDevices.prototype, "enumerateDevices", maybeLockdownDesc({ configurable: true, writable: true, value: shimEnum }));
         }
@@ -322,7 +359,19 @@
             if (enabled("deviceSecurityHideMediaDevices")) {
               bumpDevice(1, "mediaDevices_getUserMedia_reject");
             }
-            return nativeGum.apply(this, arguments);
+            const ctx = getMediaDevicesContext(this);
+            if (!ctx) {
+              return Promise.reject(makeNotFoundError("[Focus Blocker Device Security] mediaDevices unavailable"));
+            }
+            try {
+              return nativeGum.apply(ctx, arguments);
+            } catch (e) {
+              if (isIllegalInvocationError(e)) {
+                bumpDevice(1, "mediaDevices_getUserMedia_illegal_invocation");
+                return Promise.reject(makeSecurityError("[Focus Blocker Device Security] getUserMedia unavailable"));
+              }
+              throw e;
+            }
           };
           defineProp(MediaDevices.prototype, "getUserMedia", maybeLockdownDesc({ configurable: true, writable: true, value: shimGum }));
         }

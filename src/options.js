@@ -1558,13 +1558,35 @@ function saveSettings() {
   }, 120);
 }
 
-// Best-effort: if the options page closes quickly after changes, flush immediately.
-window.addEventListener("beforeunload", () => {
+function flushPendingSaveNow() {
   if (saveTimer) {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
   flushSaveNow();
+}
+
+function safeExitListener(target, event, handler) {
+  if (!target || typeof target.addEventListener !== "function") return;
+  try {
+    target.addEventListener(event, handler, { capture: true });
+  } catch (e) {
+    // Permissions-Policy: unload=() can block these listeners; ignore such errors.
+    const msg = e && typeof e.message === "string" ? e.message : "";
+    if (msg && /permissions? policy/i.test(msg)) return;
+  }
+}
+
+// Even when unload/beforeunload listeners are disallowed by policy, fall back to
+// pagehide/visibilitychange so pending saves still flush.
+safeExitListener(window, "beforeunload", flushPendingSaveNow);
+safeExitListener(window, "pagehide", flushPendingSaveNow);
+safeExitListener(document, "visibilitychange", () => {
+  try {
+    if (document.visibilityState === "hidden") flushPendingSaveNow();
+  } catch (_e) {
+    flushPendingSaveNow();
+  }
 });
 
 function statsRowTotal(row) {

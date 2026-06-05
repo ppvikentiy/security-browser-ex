@@ -127,13 +127,16 @@
    * и нативный вызов бросает — без try/catch в консоли «Permissions policy violation: unload is not allowed».
    */
   function forwardEventTargetListener(method, selfArg, type, restArgs) {
+    const t = typeof type === "string" ? type.trim().toLowerCase() : "";
+    // Avoid invoking native listeners that will immediately violate a page's
+    // permissions policy (e.g., unload=()). Skipping the native call prevents
+    // noisy console errors while keeping behavior unchanged for callers.
+    if (t === "unload" || t === "beforeunload") {
+      return undefined;
+    }
     try {
       return method.apply(selfArg, [type, ...restArgs]);
     } catch (e) {
-      const t = typeof type === "string" ? type.trim().toLowerCase() : "";
-      if (t === "unload" || t === "beforeunload") {
-        return undefined;
-      }
       const msg = e && typeof e.message === "string" ? e.message : String(e || "");
       if (/permissions? policy violation/i.test(msg)) {
         return undefined;

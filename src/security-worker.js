@@ -31,6 +31,12 @@
     return clamp(n, min, max);
   }
 
+  function isIllegalInvocationError(err) {
+    if (!err) return false;
+    const msg = typeof err.message === "string" ? err.message : "";
+    return err.name === "TypeError" && /illegal invocation/i.test(msg);
+  }
+
   function safeStr(v, fallback, maxLen = 240) {
     const s = typeof v === "string" ? v : v == null ? "" : String(v);
     const out = s.trim();
@@ -388,8 +394,40 @@
   if (nativeOffscreenConvertToBlob && nativeOffscreenGetImageData && nativeOffscreenPutImageData) {
     try {
       OffscreenCanvas.prototype.convertToBlob = function (...args) {
-        if (!spoofEnabled("securitySpoofCanvasEnabled")) return nativeOffscreenConvertToBlob.apply(this, args);
-        return withNoisyOffscreenCanvasCopy(this, (tmp) => nativeOffscreenConvertToBlob.apply(tmp, args));
+        const fallbackBlob = () => {
+          try {
+            const blank = new OffscreenCanvas(1, 1);
+            return nativeOffscreenConvertToBlob.call(blank, ...args);
+          } catch (_e) {
+            try {
+              return Promise.resolve(new Blob());
+            } catch (_e2) {
+              return Promise.reject(_e2);
+            }
+          }
+        };
+
+        if (!spoofEnabled("securitySpoofCanvasEnabled")) {
+          try {
+            return nativeOffscreenConvertToBlob.apply(this, args);
+          } catch (e) {
+            if (isIllegalInvocationError(e)) {
+              return fallbackBlob();
+            }
+            throw e;
+          }
+        }
+
+        return withNoisyOffscreenCanvasCopy(this, (tmp) => {
+          try {
+            return nativeOffscreenConvertToBlob.apply(tmp, args);
+          } catch (e) {
+            if (isIllegalInvocationError(e)) {
+              return fallbackBlob();
+            }
+            throw e;
+          }
+        });
       };
     } catch (_e) {}
   }

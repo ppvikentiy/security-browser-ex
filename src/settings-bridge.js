@@ -490,6 +490,11 @@ function refreshStorageAndBroadcastFast() {
     lastResultSnapshot = snapshot;
 
     try {
+      if (!chrome || !chrome.runtime || typeof chrome.runtime.id !== "string") {
+        tabPaused = false;
+        broadcastAll(snapshot);
+        return;
+      }
       chrome.runtime.sendMessage({ type: "FB_IS_TAB_PAUSED" }, (resp) => {
         if (myGeneration !== refreshGeneration) return;
         tabPaused = chrome.runtime.lastError ? false : !!(resp && resp.paused);
@@ -508,12 +513,16 @@ function refreshStorageAndBroadcastFast() {
     return;
   }
 
-  area.get(ALL_KEYS, (result) => {
-    void chrome.runtime.lastError;
-    if (myGeneration !== refreshGeneration) return;
-    const snapshot = result && typeof result === "object" ? result : {};
-    applyPauseThenBroadcast(snapshot);
-  });
+  try {
+    area.get(ALL_KEYS, (result) => {
+      void chrome.runtime.lastError;
+      if (myGeneration !== refreshGeneration) return;
+      const snapshot = result && typeof result === "object" ? result : {};
+      applyPauseThenBroadcast(snapshot);
+    });
+  } catch (_e) {
+    applyPauseThenBroadcast({});
+  }
 }
 
 let fbFocusAcked = false;

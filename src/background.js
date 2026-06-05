@@ -1432,16 +1432,55 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "FB_POPUP_ADD_HOST_EXCLUSION") {
     const hostRaw = typeof msg.hostname === "string" ? msg.hostname.trim().toLowerCase() : "";
-    const canonicalHost = normalizeExcludedDomainStorageEntry(hostRaw) || hostRaw;
+    const canonicalHost = normalizeExcludedDomainStorageEntry(hostRaw);
     if (!canonicalHost) {
-      sendResponse({ ok: false, reason: "empty" });
+      sendResponse({ ok: false, reason: "invalid_host" });
       return;
     }
+
+    /** Tries writing into preferred storage, retries to chrome.storage.local on failure. */
+    function writeExcluded(list, storage, onDone) {
+      storage.set({ excludedDomains: list }, () => {
+        const err = chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError : null;
+        if (!err) {
+          try {
+            refreshStorageAndBroadcastFast();
+          } catch (_e) {}
+          onDone({ ok: true, added: true });
+          return;
+        }
+        // Retry into local storage if the first attempt failed (e.g., sync quota / unavailable).
+        try {
+          const localStorage = chrome.storage && chrome.storage.local;
+          if (localStorage && localStorage !== storage) {
+            localStorage.set({ excludedDomains: list }, () => {
+              const err2 = chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError : null;
+              if (!err2) {
+                try {
+                  refreshStorageAndBroadcastFast();
+                } catch (_e2) {}
+                onDone({ ok: true, added: true, fallback: "local" });
+                return;
+              }
+              onDone({ ok: false, reason: "write_failed", message: err2.message });
+            });
+            return;
+          }
+        } catch (_e3) {}
+        onDone({ ok: false, reason: "write_failed", message: err.message });
+      });
+    }
+
     const storage = (chrome.storage && chrome.storage.local) || chrome.storage.sync;
+    if (!storage || typeof storage.get !== "function") {
+      sendResponse({ ok: false, reason: "no_storage" });
+      return;
+    }
+
     storage.get(["excludedDomains"], (r) => {
-      void chrome.runtime.lastError;
+      const _ignoredErr = chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError : null;
       const list = normalizeExcludedDomainsListFromStorage(
-        Array.isArray(r.excludedDomains) ? r.excludedDomains : []
+        Array.isArray(r && r.excludedDomains) ? r.excludedDomains : []
       );
       const exists = list.some((p) => patternMatchesHost(p, canonicalHost));
       if (exists) {
@@ -1449,10 +1488,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
       list.push(canonicalHost);
-      storage.set({ excludedDomains: list }, () => {
-        void chrome.runtime.lastError;
-        sendResponse({ ok: true, added: true });
-      });
+      writeExcluded(list, storage, (resp) => sendResponse(resp));
     });
     return true;
   }
