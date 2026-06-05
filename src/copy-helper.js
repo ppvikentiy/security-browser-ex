@@ -43,11 +43,51 @@
 
   // patternMatchesHost + normalizeExcludedDomainsListFromStorage: src/security-defaults.js
   // (injected in the same isolated world via the document_start content_scripts entry; do not reload here).
+  // On some Chromium forks content scripts may not share scope; fall back to shared root if exposed.
+  function fbSharedRoot() {
+    try {
+      if (typeof globalThis !== "undefined" && globalThis.__focusBlockerShared) {
+        return globalThis.__focusBlockerShared;
+      }
+    } catch (_e) {}
+    try {
+      if (typeof window !== "undefined" && window.__focusBlockerShared) {
+        return window.__focusBlockerShared;
+      }
+    } catch (_e2) {}
+    return null;
+  }
+
+  function fbPatternMatchesHost(pattern, host) {
+    const shr = fbSharedRoot();
+    if (shr && typeof shr.patternMatchesHost === "function") {
+      return shr.patternMatchesHost(pattern, host);
+    }
+    try {
+      if (typeof patternMatchesHost === "function") {
+        return patternMatchesHost(pattern, host);
+      }
+    } catch (_e) {}
+    return false;
+  }
+
+  function fbNormalizeExcludedDomainsListFromStorage(rawList) {
+    const shr = fbSharedRoot();
+    if (shr && typeof shr.normalizeExcludedDomainsListFromStorage === "function") {
+      return shr.normalizeExcludedDomainsListFromStorage(rawList);
+    }
+    try {
+      if (typeof normalizeExcludedDomainsListFromStorage === "function") {
+        return normalizeExcludedDomainsListFromStorage(rawList);
+      }
+    } catch (_e) {}
+    return [];
+  }
 
   // Extension is enabled everywhere except excluded domains
   function isExcluded(excludedDomains) {
     const currentHost = window.location.hostname;
-    return (excludedDomains || []).some((pattern) => patternMatchesHost(pattern, currentHost));
+    return (excludedDomains || []).some((pattern) => fbPatternMatchesHost(pattern, currentHost));
   }
 
   function refreshFromStorage() {
@@ -57,7 +97,7 @@
       borderColor = result.borderColor || DEFAULT_BORDER_COLOR;
       borderOpacity = result.borderOpacity !== undefined ? result.borderOpacity : DEFAULT_BORDER_OPACITY;
       const rawExcluded = Array.isArray(result.excludedDomains) ? result.excludedDomains : DEFAULT_EXCLUDED_DOMAINS;
-      const excludedDomains = normalizeExcludedDomainsListFromStorage(rawExcluded);
+      const excludedDomains = fbNormalizeExcludedDomainsListFromStorage(rawExcluded);
       isEnabled = !isExcluded(excludedDomains);
       updateStyles();
     }

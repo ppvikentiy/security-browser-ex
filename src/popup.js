@@ -100,8 +100,13 @@ document.addEventListener("DOMContentLoaded", () => {
     chrome.runtime.sendMessage({ type: "FB_POPUP_GET_STATE" }, (state) => {
       void chrome.runtime.lastError;
       if (!state || !state.hostname || !state.injectable) return;
-      chrome.runtime.sendMessage({ type: "FB_POPUP_ADD_HOST_EXCLUSION", hostname: state.hostname }, () => {
-        void chrome.runtime.lastError;
+      chrome.runtime.sendMessage({ type: "FB_POPUP_ADD_HOST_EXCLUSION", hostname: state.hostname }, (resp) => {
+        const err = chrome.runtime.lastError;
+        if (err || !resp || resp.ok !== true) {
+          const hint = $("statusHint");
+          if (hint) hint.textContent = "Не удалось добавить в исключения. Попробуйте ещё раз.";
+          return;
+        }
         refresh();
       });
     });
