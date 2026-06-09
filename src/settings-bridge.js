@@ -188,6 +188,64 @@ const FB_REQUEST_SETTINGS_EVENT = "FOCUS_BLOCKER_REQUEST_SETTINGS_EVENT";
 const FB_SETTINGS_ACK_EVENT = "FOCUS_BLOCKER_SETTINGS_ACK_EVENT";
 const FB_FOCUS_CACHE_KEY = "__focus_blocker_focus_cache_v1";
 
+// Per-load secret key for HMAC-signing the isolated → MAIN settings channel.
+// Delivered out-of-band via a short-lived <html data-fb-k="..."> attribute that
+// MAIN-world scripts read synchronously at document_start (before page scripts run).
+// The key is NEVER placed inside broadcast messages, so a page that merely listens
+// to settings traffic cannot learn it.
+const FB_CHANNEL = (() => {
+  try {
+    if (typeof globalThis !== "undefined" && globalThis.__fbChannel) return globalThis.__fbChannel;
+  } catch (_e) {}
+  return null;
+})();
+
+const FB_CHANNEL_KEY = FB_CHANNEL ? FB_CHANNEL.randomHexKey(32) : "";
+
+/** Monotonic per-load sequence so MAIN can reject replays/stale messages. */
+let fbChannelSeq = 0;
+
+let fbChannelKeyAttrRemoved = false;
+function fbSetChannelKeyAttr() {
+  try {
+    if (FB_CHANNEL_KEY && typeof document !== "undefined" && document.documentElement) {
+      document.documentElement.setAttribute("data-fb-k", FB_CHANNEL_KEY);
+    }
+  } catch (_e) {}
+}
+
+function fbRemoveChannelKeyAttrOnce() {
+  if (fbChannelKeyAttrRemoved) return;
+  fbChannelKeyAttrRemoved = true;
+  try {
+    if (typeof document !== "undefined" && document.documentElement) {
+      document.documentElement.removeAttribute("data-fb-k");
+    }
+  } catch (_e) {}
+}
+
+/**
+ * Stamps `seq` + HMAC `sig` onto an outgoing payload so MAIN can authenticate it.
+ * Signs the stable serialization of the payload excluding the `sig` field itself.
+ */
+function fbSignPayload(payload) {
+  payload.seq = ++fbChannelSeq;
+  if (FB_CHANNEL && FB_CHANNEL_KEY) {
+    try {
+      payload.sig = FB_CHANNEL.hmacSha256Hex(FB_CHANNEL_KEY, FB_CHANNEL.stableStringify(payload, "sig"));
+    } catch (_e) {
+      payload.sig = "";
+    }
+  } else {
+    payload.sig = "";
+  }
+  return payload;
+}
+
+// Expose key early; cleanup happens after the first broadcast (see broadcastAll),
+// which is guaranteed to run after all document_start MAIN modules have read it.
+fbSetChannelKeyAttr();
+
 let tabPaused = false;
 
 function isExcluded(excludedDomains) {
@@ -229,8 +287,9 @@ function postFocusSettings(blockedEvents, isEnabled) {
     blockedEvents,
     isEnabled: !!isEnabled,
   };
+  fbSignPayload(payload);
 
-  window.postMessage(payload, "*");
+  window.postMessage(payload, location.origin || "*");
   try {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_SETTINGS_EVENT", { detail: payload }));
   } catch (e) {}
@@ -269,25 +328,17 @@ function postSecuritySettings(result, pageAllowsModules, excludedDomains) {
     security: merged,
     workerScriptUrl,
   };
+  fbSignPayload(payload);
 
-  window.postMessage(payload, "*");
+  window.postMessage(payload, location.origin || "*");
   try {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_SECURITY_SETTINGS_EVENT", { detail: payload }));
   } catch (e) {}
 
   // Cache last-known security config for MAIN-world early startup (best-effort).
   try {
-    localStorage.setItem(
-      "__focus_blocker_security_cache_v1",
-      JSON.stringify({
-        v: 1,
-        isActive,
-        excludedDomains: Array.isArray(excludedDomains) ? excludedDomains : [],
-        security: merged,
-        workerScriptUrl,
-        ts: Date.now(),
-      })
-    );
+    // Do NOT persist full security spoof config in page-localStorage to avoid leakage.
+    localStorage.removeItem("__focus_blocker_security_cache_v1");
   } catch (e) {}
 }
 
@@ -301,8 +352,9 @@ function postNetworkSettings(result, pageAllowsModules, excludedDomains) {
     pageAllowed: !!pageAllowsModules,
     network: merged,
   };
+  fbSignPayload(payload);
 
-  window.postMessage(payload, "*");
+  window.postMessage(payload, location.origin || "*");
   try {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_NETWORK_SETTINGS_EVENT", { detail: payload }));
   } catch (e) {}
@@ -331,8 +383,9 @@ function postDsBlockSettings(result, pageAllowsModules) {
     pageAllowed: !!pageAllowsModules,
     dsBlock: merged,
   };
+  fbSignPayload(payload);
 
-  window.postMessage(payload, "*");
+  window.postMessage(payload, location.origin || "*");
   try {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_DS_BLOCK_SETTINGS_EVENT", { detail: payload }));
   } catch (e) {}
@@ -393,8 +446,9 @@ function postThreatShieldSettings(result, pageAllowsModules) {
     threatBuiltinHostPatterns: builtins.builtinHostPatterns,
     threatStackedTldTails: builtins.stackedTldTails,
   };
+  fbSignPayload(payload);
 
-  window.postMessage(payload, "*");
+  window.postMessage(payload, location.origin || "*");
   try {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_THREAT_SHIELD_SETTINGS_EVENT", { detail: payload }));
   } catch (_e) {}
@@ -425,8 +479,9 @@ function postDeviceSecuritySettings(result, pageAllowsModules) {
     pageAllowed: !!pageAllowsModules,
     deviceSecurity: merged,
   };
+  fbSignPayload(payload);
 
-  window.postMessage(payload, "*");
+  window.postMessage(payload, location.origin || "*");
   try {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_DEVICE_SECURITY_SETTINGS_EVENT", { detail: payload }));
   } catch (e) {}
@@ -461,6 +516,10 @@ function broadcastAll(result) {
   postDsBlockSettings(result, siteAllows);
   postThreatShieldSettings(result, siteAllows);
   postDeviceSecuritySettings(result, siteAllows);
+
+  // Remove the key attribute once the first broadcast is sent to minimize exposure.
+  // All document_start MAIN modules have read the key synchronously long before this.
+  queueMicrotask(fbRemoveChannelKeyAttrOnce);
 }
 
 const ALL_KEYS = [

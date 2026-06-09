@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Browser Security",
-  "version": "1.5",
+  "version": "2.0.0",
   "description": "Focus blocking, anti-fingerprint, network and privacy tools for Chromium (MV3)",
   "action": {
     "default_popup": "public/popup.html",
@@ -13,7 +13,7 @@
   "content_scripts": [
     {
       "matches": ["*://*/*"],
-      "js": ["src/security-defaults.js", "src/settings-bridge.js", "src/stats-bridge.js"],
+      "js": ["src/fb-channel.js", "src/security-defaults.js", "src/settings-bridge.js", "src/stats-bridge.js"],
       "run_at": "document_start",
       "match_about_blank": true,
       "match_origin_as_fallback": true,
@@ -21,16 +21,7 @@
     },
     {
       "matches": ["*://*/*"],
-      "js": ["src/stats-main.js", "src/device-security.js"],
-      "run_at": "document_start",
-      "world": "MAIN",
-      "match_about_blank": true,
-      "match_origin_as_fallback": true,
-      "all_frames": true
-    },
-    {
-      "matches": ["*://*/*"],
-      "js": ["src/content.js"],
+      "js": ["src/fb-channel.js", "src/stats-main.js", "src/device-security.js"],
       "run_at": "document_start",
       "world": "MAIN",
       "match_about_blank": true,
@@ -39,7 +30,7 @@
     },
     {
       "matches": ["*://*/*"],
-      "js": ["src/security.js"],
+      "js": ["src/fb-channel.js", "src/content.js"],
       "run_at": "document_start",
       "world": "MAIN",
       "match_about_blank": true,
@@ -48,7 +39,7 @@
     },
     {
       "matches": ["*://*/*"],
-      "js": ["src/security-defaults.js", "src/network-security.js", "src/ds-block.js"],
+      "js": ["src/fb-channel.js", "src/security.js"],
       "run_at": "document_start",
       "world": "MAIN",
       "match_about_blank": true,
@@ -57,7 +48,16 @@
     },
     {
       "matches": ["*://*/*"],
-      "js": ["src/threat-shield.js"],
+      "js": ["src/fb-channel.js", "src/security-defaults.js", "src/network-security.js", "src/ds-block.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
+      "all_frames": true
+    },
+    {
+      "matches": ["*://*/*"],
+      "js": ["src/fb-channel.js", "src/threat-shield.js"],
       "run_at": "document_start",
       "world": "MAIN",
       "match_about_blank": true,

@@ -1,6 +1,41 @@
 (() => {
   "use strict";
 
+  // HMAC channel: per-load secret key from the bridge, delivered via a short-lived
+  // <html data-fb-k="..."> attribute at document_start (never inside messages).
+  // Kept inside this IIFE so the page cannot reach or replace these bindings.
+  const fbNetChannelApi = (() => {
+    try {
+      return (typeof globalThis !== "undefined" && globalThis.__fbChannel) || null;
+    } catch (_e) {
+      return null;
+    }
+  })();
+  let fbNetChannelKey = "";
+  try {
+    fbNetChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
+  } catch (_e) {
+    fbNetChannelKey = "";
+  }
+  let fbNetLastSeq = 0;
+
+  // Authentic payload = valid HMAC-SHA256 signature + strictly increasing seq (anti-replay).
+  function fbNetVerifyPayload(payload) {
+    if (!fbNetChannelApi || !fbNetChannelKey || !payload || typeof payload !== "object") return false;
+    const seq = payload.seq;
+    if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= fbNetLastSeq) return false;
+    if (typeof payload.sig !== "string" || payload.sig.length !== 64) return false;
+    let expected = "";
+    try {
+      expected = fbNetChannelApi.hmacSha256Hex(fbNetChannelKey, fbNetChannelApi.stableStringify(payload, "sig"));
+    } catch (_e) {
+      return false;
+    }
+    if (expected !== payload.sig) return false;
+    fbNetLastSeq = seq;
+    return true;
+  }
+
   /** Depends on security-defaults.js (MAIN) loaded before this script. */
 
   let fbMergeNetworkFromStorage = typeof mergeNetworkFromStorage === "function" ? mergeNetworkFromStorage : null;
@@ -138,26 +173,10 @@
   }
 
   const state = {
-    isActive: false,
+    // Fail-closed: start active; only token-authenticated payload may change it.
+    isActive: true,
     merged: fbMergeNetworkFromStorage({}),
   };
-
-  /** Fast MAIN-world boot: replay last bridge payload cached by settings-bridge. */
-  try {
-    const raw = localStorage.getItem("__focus_blocker_network_cache_v1");
-    if (raw) {
-      const obj = JSON.parse(raw);
-      if (obj && typeof obj === "object") {
-        const nw = obj.network && typeof obj.network === "object" ? obj.network : {};
-        state.merged = fbMergeNetworkFromStorage(nw);
-        if (typeof obj.isActive === "boolean") {
-          state.isActive = obj.isActive;
-        } else {
-          state.isActive = !!state.merged.networkSecurityEnabled;
-        }
-      }
-    }
-  } catch (_e) {}
 
   /** Block third‑party probing from public origins into LAN/loopback. */
   function shouldInterceptOnThisPage() {
@@ -379,12 +398,15 @@
 
   window.addEventListener("message", (event) => {
     if (event.source !== window || !event.data || event.data.type !== "FOCUS_BLOCKER_NETWORK_SETTINGS") return;
+    if (!fbNetVerifyPayload(event.data)) return;
     applyPayload(event.data);
   });
 
   window.addEventListener("FOCUS_BLOCKER_NETWORK_SETTINGS_EVENT", (/** @type {CustomEvent} */ event) => {
     try {
-      applyPayload(event && event.detail ? event.detail : {});
+      const detail = event && event.detail ? event.detail : {};
+      if (!fbNetVerifyPayload(detail)) return;
+      applyPayload(detail);
     } catch (_e) {}
   });
 

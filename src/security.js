@@ -587,7 +587,7 @@
     const nativeGet = od.get;
     try {
       Object.defineProperty(Screen.prototype, prop, {
-        configurable: true,
+        configurable: false, // lockdown to prevent page from replacing
         enumerable: od.enumerable !== false,
         get() {
           return spoofEnabled("securitySpoofScreenEnabled") ? screenVals()[key] : nativeGet.call(window.screen);
@@ -607,7 +607,7 @@
     const nativeGet = od.get;
     try {
       Object.defineProperty(Window.prototype, prop, {
-        configurable: true,
+        configurable: false, // lockdown to prevent page from replacing
         enumerable: od.enumerable !== false,
         get() {
           return spoofEnabled("securitySpoofScreenEnabled") ? screenVals()[key] : nativeGet.call(window);
@@ -631,7 +631,7 @@
     const nativeVal = "value" in od ? od.value : undefined;
     try {
       Object.defineProperty(proto, prop, {
-        configurable: true,
+        configurable: false, // lockdown to prevent page from replacing
         enumerable: od.enumerable !== false,
         get() {
           if (!spoofEnabled(flag)) {
@@ -833,7 +833,7 @@
     let patched = false;
     try {
       Object.defineProperty(proto, prop, {
-        configurable: true,
+        configurable: false, // lockdown to prevent page from replacing
         enumerable: od.enumerable !== false,
         get: getter,
       });
@@ -846,7 +846,7 @@
     if (!patched) {
       try {
         Object.defineProperty(navigator, prop, {
-          configurable: true,
+          configurable: false,
           enumerable: od.enumerable !== false,
           get: getter,
         });
@@ -911,7 +911,7 @@
     let patched = false;
     try {
       Object.defineProperty(proto, "languages", {
-        configurable: true,
+        configurable: false,
         enumerable: od.enumerable !== false,
         get: getter,
       });
@@ -923,7 +923,7 @@
     if (!patched) {
       try {
         Object.defineProperty(navigator, "languages", {
-          configurable: true,
+          configurable: false,
           enumerable: od.enumerable !== false,
           get: getter,
         });
@@ -1037,7 +1037,7 @@
   if (nativeGetNavigatorUAData) {
     try {
       Object.defineProperty(Navigator.prototype, "userAgentData", {
-        configurable: true,
+          configurable: false,
         enumerable: uaDataDesc.enumerable !== false,
         get() {
           if (!spoofEnabled("securitySpoofNavigatorEnabled")) {
@@ -1054,7 +1054,7 @@
     try {
       if (!Object.getOwnPropertyDescriptor(navigator, "userAgentData")) {
         Object.defineProperty(navigator, "userAgentData", {
-          configurable: true,
+            configurable: false,
           enumerable: uaDataDesc.enumerable !== false,
           get() {
             if (!spoofEnabled("securitySpoofNavigatorEnabled")) {
@@ -1173,7 +1173,7 @@
   if (nativeFontFaceSetCheck) {
     try {
       Object.defineProperty(FontFaceSet.prototype, "check", {
-        configurable: true,
+        configurable: false,
         enumerable: true,
         writable: true,
         value: patchedFontFaceSetCheck,
@@ -1197,7 +1197,7 @@
 
     try {
       Object.defineProperty(document.fonts, "check", {
-        configurable: true,
+        configurable: false,
         enumerable: true,
         writable: true,
         value: patchedDocumentFontsCheck,
@@ -1692,10 +1692,19 @@
   function updateStateFromPayload(payload) {
     const sec = normalizeSecurity(payload && payload.security ? payload.security : null);
     const fpKey = sec ? `${sec.securityFpMode}|${sec.securityPreset}` : "";
-    const nextWorkerUrl =
+    const nextWorkerUrlRaw =
       payload && typeof payload.workerScriptUrl === "string" && payload.workerScriptUrl.trim()
         ? payload.workerScriptUrl.trim()
         : "";
+
+    // Accept workerScriptUrl only if it points to our extension.
+    let nextWorkerUrl = workerScriptUrl;
+    try {
+      const u = nextWorkerUrlRaw ? new URL(nextWorkerUrlRaw) : null;
+      if (u && u.protocol === "chrome-extension:" && chrome && chrome.runtime && u.host === chrome.runtime.id) {
+        nextWorkerUrl = u.href;
+      }
+    } catch (_e) {}
 
     if (fpKey !== lastFpCacheKey) {
       sessionWebGlProfile = null;
@@ -1710,29 +1719,58 @@
     state.security = sec;
     if (nextWorkerUrl) workerScriptUrl = nextWorkerUrl;
 
-    // Persist for next navigation in this origin.
+    // Do not persist full spoof config into page localStorage to avoid leakage.
     try {
-      localStorage.setItem(
-        "__focus_blocker_security_cache_v1",
-        JSON.stringify({
-          isActive: state.isActive,
-          security: state.security,
-          workerScriptUrl,
-          ts: Date.now(),
-        })
-      );
-    } catch (e) {}
+      localStorage.removeItem("__focus_blocker_security_cache_v1");
+    } catch (_e) {}
+  }
+
+  // HMAC channel: per-load secret key from the bridge, delivered via a short-lived
+  // <html data-fb-k="..."> attribute at document_start (never inside messages).
+  const fbChannelApi = (() => {
+    try {
+      return (typeof globalThis !== "undefined" && globalThis.__fbChannel) || null;
+    } catch (_e) {
+      return null;
+    }
+  })();
+  let fbChannelKey = "";
+  try {
+    fbChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
+  } catch (_e) {
+    fbChannelKey = "";
+  }
+  let fbLastSeq = 0;
+
+  // Authentic payload = valid HMAC-SHA256 signature + strictly increasing seq (anti-replay).
+  function fbVerifyPayload(payload) {
+    if (!fbChannelApi || !fbChannelKey || !payload || typeof payload !== "object") return false;
+    const seq = payload.seq;
+    if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= fbLastSeq) return false;
+    if (typeof payload.sig !== "string" || payload.sig.length !== 64) return false;
+    let expected = "";
+    try {
+      expected = fbChannelApi.hmacSha256Hex(fbChannelKey, fbChannelApi.stableStringify(payload, "sig"));
+    } catch (_e) {
+      return false;
+    }
+    if (expected !== payload.sig) return false;
+    fbLastSeq = seq;
+    return true;
   }
 
   window.addEventListener("message", (event) => {
     if (event.source !== window || !event.data || event.data.type !== "FOCUS_BLOCKER_SECURITY_SETTINGS") return;
+    if (!fbVerifyPayload(event.data)) return;
     updateStateFromPayload(event.data);
   });
 
   // Same payload via direct CustomEvent (more reliable than postMessage timing).
   window.addEventListener("FOCUS_BLOCKER_SECURITY_SETTINGS_EVENT", (event) => {
     try {
-      updateStateFromPayload(event && event.detail ? event.detail : null);
+      const detail = event && event.detail ? event.detail : null;
+      if (!fbVerifyPayload(detail)) return;
+      updateStateFromPayload(detail);
     } catch (e) {}
   });
 
