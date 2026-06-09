@@ -12,6 +12,8 @@ Chromium extension (Manifest V3): focus/visibility hardening, anti-fingerprintin
 
 **Version:** see `"version"` in [`manifest.json`](./manifest.json).
 
+> **What's new in 2.0.0** — the internal settings channel is now hardened: every message between the isolated world and the page MAIN world is signed with **HMAC-SHA256** using a per-page-load key, with replay protection. The full anti-fingerprint config is no longer persisted to page `localStorage`; critical modules boot **fail-closed**. See [Internal channel security](#internal-channel-security-hmac).
+
 Source: [https://github.com/ppvikentiy/security-browser-ex](https://github.com/ppvikentiy/security-browser-ex)
 
 License: [MIT](./LICENSE)
@@ -102,7 +104,7 @@ Also: tab pause map `focusBlockerPausedTabIds`, ADS cosmetic CSS per tab, stats 
 
 ### Settings bridge → MAIN world (`src/settings-bridge.js`)
 
-Isolated world reads `chrome.storage` and posts to MAIN via `postMessage` + `CustomEvent`:
+Isolated world reads `chrome.storage` and posts to MAIN via `postMessage` + `CustomEvent`. Every message is **HMAC-SHA256 signed** (`seq` + `sig` fields, see [Internal channel security](#internal-channel-security-hmac)); MAIN modules ignore unsigned or replayed messages:
 
 | `type` | Purpose |
 |--------|---------|
@@ -113,7 +115,19 @@ Isolated world reads `chrome.storage` and posts to MAIN via `postMessage` + `Cus
 | `FOCUS_BLOCKER_DEVICE_SECURITY_SETTINGS` | Device Security |
 | `FOCUS_BLOCKER_THREAT_SHIELD_SETTINGS` | Threat Shield merged prefs + builtin host patterns and stacked-TLD tail list |
 
-Resend request: `FOCUS_BLOCKER_REQUEST_SETTINGS`; ack: `FOCUS_BLOCKER_SETTINGS_ACK`. Optional `localStorage` caches `__focus_blocker_*_cache_v1` (Threat Shield uses `__focus_blocker_threat_shield_cache_v1`).
+Resend request: `FOCUS_BLOCKER_REQUEST_SETTINGS`; ack: `FOCUS_BLOCKER_SETTINGS_ACK`. Optional `localStorage` caches `__focus_blocker_*_cache_v1` are used as a pre-bridge fallback for **non-secret flags only** (focus, ADS Block, Threat Shield). The full anti-fingerprint config is never persisted to page `localStorage`, and Network/Device Security never downgrade `isActive` from a cache — only via a signed bridge message.
+
+### Internal channel security (HMAC)
+
+The isolated → MAIN channel is authenticated so a malicious page cannot disable modules or alter config with forged `postMessage` / `CustomEvent` traffic:
+
+* **`src/fb-channel.js`** — shared library (loaded first in every `content_scripts` entry): pure-JS SHA-256 / HMAC-SHA256 (synchronous, works on `http://` pages where `crypto.subtle` is unavailable) plus a deterministic `stableStringify` with sorted keys. All natives it relies on (`TextEncoder`, `JSON.stringify`, `Object.keys`, `Array.prototype.sort`, `Uint8Array`, …) are captured at `document_start` before any page script runs, and the exported API (`globalThis.__fbChannel`) is frozen so the page cannot swap methods to steal the key
+* **Key** — 32 random bytes per page load; the bridge hands it to MAIN modules via a short-lived `<html data-fb-k="...">` attribute removed after the first broadcast. The key is **never placed inside messages**
+* **Signature** — each message carries a monotonic `seq` counter and `sig = HMAC(key, stableStringify(payload without sig))`; MAIN modules verify the signature and require a strictly increasing `seq` (anti-replay)
+* **Fail-closed** — Network Security and Device Security start enabled and can only be turned off by a signed message; the anti-fingerprint `workerScriptUrl` is accepted only when it is a `chrome-extension://` URL of this extension; critical API hooks are pinned with `configurable: false`
+* The cosmetic-CSS handler in `background.js` additionally checks `sender.id` and caps CSS size
+
+Residual risk: the key attribute exists from `document_start` until the first settings broadcast (milliseconds) — an inline script at the very top of `<head>` could theoretically read it. The attack bar is raised from "passively listen to `postMessage`" to "actively read a DOM attribute within a narrow load window".
 
 ### Stats path
 
@@ -121,6 +135,7 @@ MAIN posts `FOCUS_BLOCKER_STATS_DELTA` → isolated `stats-bridge.js` → `FB_ST
 
 ### Page scripts (MAIN and related)
 
+* `src/fb-channel.js` — settings-channel crypto primitives (HMAC-SHA256, canonical serialization)
 * `src/content.js` — focus
 * `src/security.js`, `src/security-worker.js` — anti-fingerprint
 * `src/network-security.js` — fetch/XHR/WebSocket hooks (per settings)

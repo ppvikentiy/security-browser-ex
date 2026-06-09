@@ -392,8 +392,43 @@
     runCheck();
   }
 
+  // HMAC channel: per-load secret key from the bridge, delivered via a short-lived
+  // <html data-fb-k="..."> attribute at document_start (never inside messages).
+  const fbChannelApi = (() => {
+    try {
+      return (typeof globalThis !== "undefined" && globalThis.__fbChannel) || null;
+    } catch (_e) {
+      return null;
+    }
+  })();
+  let fbChannelKey = "";
+  try {
+    fbChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
+  } catch (_e) {
+    fbChannelKey = "";
+  }
+  let fbLastSeq = 0;
+
+  // Authentic payload = valid HMAC-SHA256 signature + strictly increasing seq (anti-replay).
+  function fbVerifyPayload(payload) {
+    if (!fbChannelApi || !fbChannelKey || !payload || typeof payload !== "object") return false;
+    const seq = payload.seq;
+    if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= fbLastSeq) return false;
+    if (typeof payload.sig !== "string" || payload.sig.length !== 64) return false;
+    let expected = "";
+    try {
+      expected = fbChannelApi.hmacSha256Hex(fbChannelKey, fbChannelApi.stableStringify(payload, "sig"));
+    } catch (_e) {
+      return false;
+    }
+    if (expected !== payload.sig) return false;
+    fbLastSeq = seq;
+    return true;
+  }
+
   window.addEventListener("message", (event) => {
     if (event.source !== window || !event.data || event.data.type !== "FOCUS_BLOCKER_THREAT_SHIELD_SETTINGS") return;
+    if (!fbVerifyPayload(event.data)) return;
     applyPayload(event.data);
   });
 
@@ -401,7 +436,9 @@
     "FOCUS_BLOCKER_THREAT_SHIELD_SETTINGS_EVENT",
     (/** @type {CustomEvent} */ evt) => {
       try {
-        applyPayload(evt && evt.detail ? evt.detail : {});
+        const detail = evt && evt.detail ? evt.detail : {};
+        if (!fbVerifyPayload(detail)) return;
+        applyPayload(detail);
       } catch (_e2) {}
     },
     false

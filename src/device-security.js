@@ -458,26 +458,54 @@
     state.cfg = normalizeCfg(p.deviceSecurity || null);
   }
 
-  // Fast MAIN-world boot: replay last bridge payload cached by settings-bridge.
-  try {
-    const raw = localStorage.getItem("__focus_blocker_device_security_cache_v1");
-    if (raw) {
-      const obj = JSON.parse(raw);
-      if (obj && typeof obj === "object") {
-        if (typeof obj.isActive === "boolean") state.isActive = obj.isActive;
-        state.cfg = normalizeCfg(obj.deviceSecurity || null);
-      }
+  // Fail-closed: start enabled; only an HMAC-authenticated payload may change it.
+  // Do not trust page-localStorage cache for deciding isActive.
+
+  // HMAC channel: per-load secret key from the bridge, delivered via a short-lived
+  // <html data-fb-k="..."> attribute at document_start (never inside messages).
+  const fbChannelApi = (() => {
+    try {
+      return (typeof globalThis !== "undefined" && globalThis.__fbChannel) || null;
+    } catch (_e) {
+      return null;
     }
-  } catch (_e) {}
+  })();
+  let fbChannelKey = "";
+  try {
+    fbChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
+  } catch (_e) {
+    fbChannelKey = "";
+  }
+  let fbLastSeq = 0;
+
+  // Authentic payload = valid HMAC-SHA256 signature + strictly increasing seq (anti-replay).
+  function fbVerifyPayload(payload) {
+    if (!fbChannelApi || !fbChannelKey || !payload || typeof payload !== "object") return false;
+    const seq = payload.seq;
+    if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= fbLastSeq) return false;
+    if (typeof payload.sig !== "string" || payload.sig.length !== 64) return false;
+    let expected = "";
+    try {
+      expected = fbChannelApi.hmacSha256Hex(fbChannelKey, fbChannelApi.stableStringify(payload, "sig"));
+    } catch (_e) {
+      return false;
+    }
+    if (expected !== payload.sig) return false;
+    fbLastSeq = seq;
+    return true;
+  }
 
   window.addEventListener("message", (event) => {
     if (event.source !== window || !event.data || event.data.type !== "FOCUS_BLOCKER_DEVICE_SECURITY_SETTINGS") return;
+    if (!fbVerifyPayload(event.data)) return;
     applyPayload(event.data);
   });
 
   window.addEventListener("FOCUS_BLOCKER_DEVICE_SECURITY_SETTINGS_EVENT", (event) => {
     try {
-      applyPayload(event && event.detail ? event.detail : {});
+      const detail = event && event.detail ? event.detail : {};
+      if (!fbVerifyPayload(detail)) return;
+      applyPayload(detail);
     } catch (_e) {}
   });
 

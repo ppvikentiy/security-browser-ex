@@ -310,11 +310,46 @@
     blockedHandlers.clear();
   };
 
+  // HMAC channel: per-load secret key from the bridge, delivered via a short-lived
+  // <html data-fb-k="..."> attribute at document_start (never inside messages).
+  const fbChannelApi = (() => {
+    try {
+      return (typeof globalThis !== "undefined" && globalThis.__fbChannel) || null;
+    } catch (_e) {
+      return null;
+    }
+  })();
+  let fbChannelKey = "";
+  try {
+    fbChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
+  } catch (_e) {
+    fbChannelKey = "";
+  }
+  let fbLastSeq = 0;
+
+  // Authentic payload = valid HMAC-SHA256 signature + strictly increasing seq (anti-replay).
+  function fbVerifyPayload(payload) {
+    if (!fbChannelApi || !fbChannelKey || !payload || typeof payload !== "object") return false;
+    const seq = payload.seq;
+    if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= fbLastSeq) return false;
+    if (typeof payload.sig !== "string" || payload.sig.length !== 64) return false;
+    let expected = "";
+    try {
+      expected = fbChannelApi.hmacSha256Hex(fbChannelKey, fbChannelApi.stableStringify(payload, "sig"));
+    } catch (_e) {
+      return false;
+    }
+    if (expected !== payload.sig) return false;
+    fbLastSeq = seq;
+    return true;
+  }
+
   // --- Settings from bridge (postMessage + CustomEvent) ---
   window.addEventListener(
     "message",
     (event) => {
       if (event.source !== window || !event.data || event.data.type !== FB_SETTINGS_TYPE) return;
+      if (!fbVerifyPayload(event.data)) return;
       applyFocusSettings(event.data.blockedEvents, event.data.isEnabled, true);
     },
     true
@@ -326,6 +361,7 @@
       try {
         const detail = event && event.detail ? event.detail : null;
         if (!detail || detail.type !== FB_SETTINGS_TYPE) return;
+        if (!fbVerifyPayload(detail)) return;
         applyFocusSettings(detail.blockedEvents, detail.isEnabled, true);
       } catch (_e) {}
     },

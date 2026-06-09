@@ -1290,8 +1290,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     }
 
+    // Accept messages only from this extension (defense-in-depth).
+    if (!sender.id || sender.id !== chrome.runtime.id) {
+      sendResponse({ ok: false });
+      return;
+    }
+
     const enabled = !!msg.enabled;
-    const cssText = typeof msg.cssText === "string" ? msg.cssText : "";
+    const cssTextRaw = typeof msg.cssText === "string" ? msg.cssText : "";
+    // Limit CSS size to avoid abuse; 100k is ample for selector list.
+    const cssText = cssTextRaw.length > 100000 ? cssTextRaw.slice(0, 100000) : cssTextRaw;
 
     readDsCosmeticCssMap((map) => {
       const keyA = String(tabId);
