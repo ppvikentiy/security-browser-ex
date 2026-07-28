@@ -27,7 +27,10 @@
 
   function bumpFocus(delta, subKey) {
     try {
-      const fn = globalThis.__focusBlockerStatsBump;
+      const fn =
+        globalThis.__focusBlockerStatsBump ||
+        (document.documentElement && document.documentElement.__focusBlockerStatsBump) ||
+        (typeof Document !== "undefined" && Document.prototype && Document.prototype.__focusBlockerStatsBump);
       if (typeof fn === "function")
         fn("focus", typeof delta === "number" && delta > 0 ? delta : 1, typeof subKey === "string" ? subKey : undefined);
     } catch (_e) {}
@@ -104,6 +107,16 @@
     } catch (_e2) {}
   }
 
+  /**
+   * Temporary pre-bridge state, so focus/visibility events are already blocked
+   * before page scripts run. We keep requesting the real settings from the bridge.
+   *
+   * The cache is the page's own `localStorage` and cannot be authenticated here
+   * (the HMAC channel key is minted per page load), so it is only allowed to turn
+   * blocking *on*: a cached `isEnabled: false` is ignored, and the cached event
+   * list is not used — trusting it would let a page shrink the blocked set to
+   * nothing and observe its own blur/visibility events during this window.
+   */
   function tryApplyCachedSettings() {
     // Best-effort: cache can be unavailable if Device Security blocks storage.
     try {
@@ -111,10 +124,8 @@
       if (!raw) return;
       const obj = JSON.parse(raw);
       if (!obj || typeof obj !== "object") return;
-      const blockedEvents = obj.blockedEvents;
-      const enabled = obj.isEnabled;
-      // Apply as a temporary state; keep requesting real settings from the bridge.
-      applyFocusSettings(blockedEvents, enabled, false);
+      if (obj.isEnabled !== true) return;
+      applyFocusSettings(DEFAULT_BLOCKED_EVENTS, true, false);
     } catch (_e) {}
   }
 
@@ -312,13 +323,24 @@
 
   // HMAC channel: per-load secret key from the bridge, delivered via a short-lived
   // <html data-fb-k="..."> attribute at document_start (never inside messages).
-  const fbChannelApi = (() => {
+  // The channel itself comes from fb-channel-main.js, the MAIN-world copy of
+  // fb-channel.js (see that file's header for why the copy exists).
+  function fbResolveChannelApi() {
     try {
-      return (typeof globalThis !== "undefined" && globalThis.__fbChannel) || null;
-    } catch (_e) {
-      return null;
-    }
-  })();
+      if (typeof globalThis !== "undefined" && globalThis.__fbChannel) return globalThis.__fbChannel;
+    } catch (_e) {}
+    try {
+      const el = document && document.documentElement;
+      if (el && el.__fbChannelApi) return el.__fbChannelApi;
+    } catch (_e) {}
+    try {
+      if (typeof Document !== "undefined" && Document.prototype && typeof Document.prototype.__fbChannelGet === "function") {
+        return Document.prototype.__fbChannelGet();
+      }
+    } catch (_e) {}
+    return null;
+  }
+  let fbChannelApi = fbResolveChannelApi();
   let fbChannelKey = "";
   try {
     fbChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
@@ -329,6 +351,7 @@
 
   // Authentic payload = valid HMAC-SHA256 signature + strictly increasing seq (anti-replay).
   function fbVerifyPayload(payload) {
+    if (!fbChannelApi) fbChannelApi = fbResolveChannelApi();
     if (!fbChannelApi || !fbChannelKey || !payload || typeof payload !== "object") return false;
     const seq = payload.seq;
     if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= fbLastSeq) return false;

@@ -197,6 +197,15 @@ const FB_CHANNEL = (() => {
   try {
     if (typeof globalThis !== "undefined" && globalThis.__fbChannel) return globalThis.__fbChannel;
   } catch (_e) {}
+  try {
+    const el = document && document.documentElement;
+    if (el && el.__fbChannelApi) return el.__fbChannelApi;
+  } catch (_e) {}
+  try {
+    if (typeof Document !== "undefined" && Document.prototype && typeof Document.prototype.__fbChannelGet === "function") {
+      return Document.prototype.__fbChannelGet();
+    }
+  } catch (_e) {}
   return null;
 })();
 
@@ -294,13 +303,14 @@ function postFocusSettings(blockedEvents, isEnabled) {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_SETTINGS_EVENT", { detail: payload }));
   } catch (e) {}
 
-  // Cache last-known focus config for MAIN-world early startup (best-effort).
+  // Boot hint for MAIN-world early startup (best-effort). Only the on/off flag is
+  // cached: the page owns this storage, and the module rebuilds the event list from
+  // its own defaults rather than trusting anything read back from here.
   try {
     localStorage.setItem(
       FB_FOCUS_CACHE_KEY,
       JSON.stringify({
         v: 1,
-        blockedEvents: Array.isArray(blockedEvents) ? blockedEvents : DEFAULT_BLOCKED_EVENTS,
         isEnabled: !!isEnabled,
         ts: Date.now(),
       })
@@ -359,17 +369,10 @@ function postNetworkSettings(result, pageAllowsModules, excludedDomains) {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_NETWORK_SETTINGS_EVENT", { detail: payload }));
   } catch (e) {}
 
+  // Network Security boots only from a signed payload; never persist config into
+  // page-owned localStorage. Drop any entry left by an older version.
   try {
-    localStorage.setItem(
-      "__focus_blocker_network_cache_v1",
-      JSON.stringify({
-        v: 1,
-        isActive,
-        pageAllowed: !!pageAllowsModules,
-        network: merged,
-        ts: Date.now(),
-      })
-    );
+    localStorage.removeItem("__focus_blocker_network_cache_v1");
   } catch (e) {}
 }
 
@@ -390,14 +393,21 @@ function postDsBlockSettings(result, pageAllowsModules) {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_DS_BLOCK_SETTINGS_EVENT", { detail: payload }));
   } catch (e) {}
 
+  // Boot-hint cache for the MAIN-world module: booleans only. The page owns this
+  // storage, so user lists must not be persisted here and the module treats the
+  // entry as a hint that can only raise protection, never relax it.
   try {
     localStorage.setItem(
       "__focus_blocker_ds_block_cache_v1",
       JSON.stringify({
         v: 1,
         isActive,
-        pageAllowed: !!pageAllowsModules,
-        dsBlock: merged,
+        dsBlock: {
+          dsBlockEnabled: !!merged.dsBlockEnabled,
+          dsBlockBlockPopups: !!merged.dsBlockBlockPopups,
+          dsBlockCosmeticEnabled: !!merged.dsBlockCosmeticEnabled,
+          dsBlockTelemetryEnabled: !!merged.dsBlockTelemetryEnabled,
+        },
         ts: Date.now(),
       })
     );
@@ -453,19 +463,10 @@ function postThreatShieldSettings(result, pageAllowsModules) {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_THREAT_SHIELD_SETTINGS_EVENT", { detail: payload }));
   } catch (_e) {}
 
+  // Threat Shield boots only from a signed payload, so no cache is written. Drop
+  // any entry left by an older version (or planted by the page).
   try {
-    localStorage.setItem(
-      "__focus_blocker_threat_shield_cache_v1",
-      JSON.stringify({
-        v: 1,
-        isActive,
-        pageAllowed: !!pageAllowsModules,
-        threatShield: merged,
-        threatBuiltinHostPatterns: builtins.builtinHostPatterns,
-        threatStackedTldTails: builtins.stackedTldTails,
-        ts: Date.now(),
-      })
-    );
+    localStorage.removeItem("__focus_blocker_threat_shield_cache_v1");
   } catch (_e) {}
 }
 
@@ -486,17 +487,10 @@ function postDeviceSecuritySettings(result, pageAllowsModules) {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_DEVICE_SECURITY_SETTINGS_EVENT", { detail: payload }));
   } catch (e) {}
 
+  // Device Security boots only from a signed payload; never persist config into
+  // page-owned localStorage. Drop any entry left by an older version.
   try {
-    localStorage.setItem(
-      "__focus_blocker_device_security_cache_v1",
-      JSON.stringify({
-        v: 1,
-        isActive,
-        pageAllowed: !!pageAllowsModules,
-        deviceSecurity: merged,
-        ts: Date.now(),
-      })
-    );
+    localStorage.removeItem("__focus_blocker_device_security_cache_v1");
   } catch (_e) {}
 }
 

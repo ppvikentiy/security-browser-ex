@@ -1,6 +1,15 @@
 /**
  * Shared defaults for Security module (options UI + settings bridge).
  * Keep in sync with runtime validation in security.js.
+ *
+ * TWO IDENTICAL COPIES EXIST: security-defaults.js (isolated entry, options page,
+ * service worker) and security-defaults-main.js (MAIN entry). They must stay
+ * byte-identical — change one, copy it over the other. The duplication is required,
+ * not stylistic: a script path listed in several content_scripts entries can be
+ * injected into a document only once, so the isolated entry consumed the single
+ * injection and MAIN modules silently fell back to their trimmed inline defaults
+ * (ADS Block lost its builtin domain/selector lists). Distinct paths give each world
+ * its own copy. See fb-channel.js for the same constraint on the settings channel.
  */
 const SECURITY_FP_MODES = ["per_domain_deterministic", "per_session_deterministic", "random_each_call"];
 

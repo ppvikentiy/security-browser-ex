@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  /** Depends on security-defaults.js (MAIN), loaded before this script. */
+  /** Depends on security-defaults-main.js (MAIN copy), loaded before this script. */
 
   const BANNER_TEXT = "Возможна угроза вашим данным. Будьте осторожны!";
   const BANNER_HOST = "__focus_blocker_threat_banner_v1";
@@ -98,22 +98,16 @@
       : [],
   };
 
-  /** Fast MAIN-world boot: replay last bridge payload */
-  try {
-    const raw = localStorage.getItem("__focus_blocker_threat_shield_cache_v1");
-    if (raw) {
-      const obj = JSON.parse(raw);
-      if (obj && typeof obj === "object") {
-        const ts = obj.threatShield && typeof obj.threatShield === "object" ? obj.threatShield : {};
-        state.merged = fbMergeThreatShield(ts);
-        if (typeof obj.isActive === "boolean") state.isActive = obj.isActive;
-        else state.isActive = !!state.merged.threatShieldEnabled;
-        if (typeof obj.pageAllowed === "boolean") state.pageAllowed = obj.pageAllowed;
-        if (Array.isArray(obj.threatBuiltinHostPatterns)) state.builtinHostPatterns = obj.threatBuiltinHostPatterns;
-        if (Array.isArray(obj.threatStackedTldTails)) state.stackedTldTails = obj.threatStackedTldTails;
-      }
-    }
-  } catch (_e) {}
+  /**
+   * No boot cache is read here, by design.
+   *
+   * A `localStorage` cache is attacker-controlled on a hostile origin and cannot be
+   * authenticated at document_start (the HMAC channel key is minted per page load,
+   * so nothing signed during an earlier load is verifiable now). Replaying one would
+   * let a page hand itself `pageAllowed: false`, a matching whitelist entry or empty
+   * detection lists and silence the warning. Unlike the ad/telemetry hooks, the
+   * banner is only UI, so it can wait for the signed bridge payload.
+   */
 
   /** VK и др.: SPA удаляют вставленный узел из DOM — периодически восстанавливаем баннер, пока условие срабатывания актуально. */
   /** @type {number | null} */
@@ -374,33 +368,29 @@
     if (Array.isArray(p.threatBuiltinHostPatterns)) state.builtinHostPatterns = p.threatBuiltinHostPatterns;
     if (Array.isArray(p.threatStackedTldTails)) state.stackedTldTails = p.threatStackedTldTails;
 
-    try {
-      localStorage.setItem(
-        "__focus_blocker_threat_shield_cache_v1",
-        JSON.stringify({
-          v: 1,
-          isActive: state.isActive,
-          pageAllowed: state.pageAllowed,
-          threatShield: ts,
-          threatBuiltinHostPatterns: state.builtinHostPatterns,
-          threatStackedTldTails: state.stackedTldTails,
-          ts: Date.now(),
-        })
-      );
-    } catch (_e) {}
-
     runCheck();
   }
 
   // HMAC channel: per-load secret key from the bridge, delivered via a short-lived
   // <html data-fb-k="..."> attribute at document_start (never inside messages).
-  const fbChannelApi = (() => {
+  // The channel itself comes from fb-channel-main.js, the MAIN-world copy of
+  // fb-channel.js (see that file's header for why the copy exists).
+  function fbResolveChannelApi() {
     try {
-      return (typeof globalThis !== "undefined" && globalThis.__fbChannel) || null;
-    } catch (_e) {
-      return null;
-    }
-  })();
+      if (typeof globalThis !== "undefined" && globalThis.__fbChannel) return globalThis.__fbChannel;
+    } catch (_e) {}
+    try {
+      const el = document && document.documentElement;
+      if (el && el.__fbChannelApi) return el.__fbChannelApi;
+    } catch (_e) {}
+    try {
+      if (typeof Document !== "undefined" && Document.prototype && typeof Document.prototype.__fbChannelGet === "function") {
+        return Document.prototype.__fbChannelGet();
+      }
+    } catch (_e) {}
+    return null;
+  }
+  let fbChannelApi = fbResolveChannelApi();
   let fbChannelKey = "";
   try {
     fbChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
@@ -409,19 +399,62 @@
   }
   let fbLastSeq = 0;
 
+  // A silently dropped control message leaves the module stuck at its startup
+  // default forever, which is indistinguishable from "no settings yet". Report the
+  // first genuine rejection so the channel cannot fail invisibly. Stale-seq drops
+  // are normal (each payload is delivered twice, as event + postMessage) and are
+  // deliberately not reported.
+  let fbVerifyWarned = false;
+  function fbWarnVerifyOnce(reason) {
+    if (fbVerifyWarned) return;
+    fbVerifyWarned = true;
+    try {
+      // eslint-disable-next-line no-console
+      console.warn("[Focus Blocker Threat Shield] settings message rejected:", reason);
+    } catch (_e) {}
+  }
+
   // Authentic payload = valid HMAC-SHA256 signature + strictly increasing seq (anti-replay).
   function fbVerifyPayload(payload) {
-    if (!fbChannelApi || !fbChannelKey || !payload || typeof payload !== "object") return false;
+    if (!payload || typeof payload !== "object") return false;
+    if (!fbChannelApi) fbChannelApi = fbResolveChannelApi();
+    if (!fbChannelApi) {
+      // Name the carrier that missed: which ones are empty says whether the channel
+      // file did not run at all or only its cross-file handoff broke.
+      let probe = "";
+      try {
+        probe =
+          " global=" +
+          (typeof globalThis !== "undefined" && globalThis.__fbChannel ? "y" : "n") +
+          " html=" +
+          (document && document.documentElement && document.documentElement.__fbChannelApi ? "y" : "n") +
+          " proto=" +
+          (typeof Document !== "undefined" && Document.prototype && Document.prototype.__fbChannelGet ? "y" : "n");
+      } catch (_e) {}
+      fbWarnVerifyOnce("channel api unavailable (fb-channel-main.js exports not visible):" + probe);
+      return false;
+    }
+    if (!fbChannelKey) {
+      fbWarnVerifyOnce("channel key unavailable (data-fb-k missing at document_start)");
+      return false;
+    }
     const seq = payload.seq;
     if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= fbLastSeq) return false;
-    if (typeof payload.sig !== "string" || payload.sig.length !== 64) return false;
+    if (typeof payload.sig !== "string" || payload.sig.length !== 64) {
+      fbWarnVerifyOnce("payload has no signature");
+      return false;
+    }
     let expected = "";
     try {
       expected = fbChannelApi.hmacSha256Hex(fbChannelKey, fbChannelApi.stableStringify(payload, "sig"));
     } catch (_e) {
+      fbWarnVerifyOnce("hmac computation threw");
       return false;
     }
-    if (expected !== payload.sig) return false;
+    if (expected !== payload.sig) {
+      fbWarnVerifyOnce("signature mismatch (key disagreement between worlds)");
+      return false;
+    }
     fbLastSeq = seq;
     return true;
   }
