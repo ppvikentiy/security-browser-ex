@@ -96,8 +96,34 @@
     scheduleFlush();
   }
 
+  // Published on globalThis plus two DOM carriers, mirroring fb-channel-main.js, so
+  // modules loaded after this one can find the collector even on hosts where scripts
+  // of one entry do not share a global object. Non-writable so the page cannot
+  // substitute its own collector (it can already forge deltas by posting MSG_TYPE
+  // itself, but it should not observe module activity).
   try {
     globalThis.__focusBlockerStatsBump = bump;
+  } catch (_e) {}
+  try {
+    const el = document && document.documentElement;
+    if (el && !el.__focusBlockerStatsBump) {
+      Object.defineProperty(el, "__focusBlockerStatsBump", {
+        value: bump,
+        configurable: false,
+        writable: false,
+        enumerable: false,
+      });
+    }
+  } catch (_e) {}
+  try {
+    if (typeof Document !== "undefined" && Document.prototype && !Document.prototype.__focusBlockerStatsBump) {
+      Object.defineProperty(Document.prototype, "__focusBlockerStatsBump", {
+        value: bump,
+        configurable: false,
+        writable: false,
+        enumerable: false,
+      });
+    }
   } catch (_e) {}
 
   try {

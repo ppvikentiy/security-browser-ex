@@ -12,7 +12,7 @@ Chromium extension (Manifest V3): focus/visibility hardening, anti-fingerprintin
 
 **Version:** see `"version"` in [`manifest.json`](./manifest.json).
 
-> **What's new in 2.0.0** — the internal settings channel is now hardened: every message between the isolated world and the page MAIN world is signed with **HMAC-SHA256** using a per-page-load key, with replay protection. The full anti-fingerprint config is no longer persisted to page `localStorage`; critical modules boot **fail-closed**. See [Internal channel security](#internal-channel-security-hmac).
+> **What's new in 2.5.0** — fixed a critical settings-delivery bug in the page MAIN world (seen on vk.ru and similar sites): a script path listed in several `content_scripts` entries was injected into a document only once — the isolated entry consumed the single injection, so MAIN modules never received the signed HMAC channel. Threat Shield stayed silent, Device Security remained fail-closed and blocked IndexedDB, and MAIN-side stats were not counted. Added separate byte-identical copies for the MAIN world — `fb-channel-main.js` and `security-defaults-main.js`; all MAIN scripts are now in a single manifest entry. To verify the copies stay in sync: `node tools/check-world-copies.mjs [--fix]`. See [Internal channel security](#internal-channel-security-hmac).
 
 Source: [https://github.com/ppvikentiy/security-browser-ex](https://github.com/ppvikentiy/security-browser-ex)
 
@@ -115,13 +115,20 @@ Isolated world reads `chrome.storage` and posts to MAIN via `postMessage` + `Cus
 | `FOCUS_BLOCKER_DEVICE_SECURITY_SETTINGS` | Device Security |
 | `FOCUS_BLOCKER_THREAT_SHIELD_SETTINGS` | Threat Shield merged prefs + builtin host patterns and stacked-TLD tail list |
 
-Resend request: `FOCUS_BLOCKER_REQUEST_SETTINGS`; ack: `FOCUS_BLOCKER_SETTINGS_ACK`. Optional `localStorage` caches `__focus_blocker_*_cache_v1` are used as a pre-bridge fallback for **non-secret flags only** (focus, ADS Block, Threat Shield). The full anti-fingerprint config is never persisted to page `localStorage`, and Network/Device Security never downgrade `isActive` from a cache — only via a signed bridge message.
+Resend request: `FOCUS_BLOCKER_REQUEST_SETTINGS`; ack: `FOCUS_BLOCKER_SETTINGS_ACK`.
+
+The `__focus_blocker_*_cache_v1` entries live in the **page's own** `localStorage` and are always treated as untrusted: they cannot be signed (the HMAC key is minted per page load) and a page can delete them regardless. Hence the rule — a cache may only ever **raise** protection above the fail-safe default, never relax it.
+
+- **ADS Block** reads its cache at `document_start` so the `window.open` / `sendBeacon` / telemetry hooks are armed before page scripts run. Only boolean flags are consumed, and only when `true`; cached `false` values, domain/selector lists and `pageAllowed` are ignored, and user lists are never written to the cache.
+- **Threat Shield**, **Network Security** and **Device Security** never read or write a cache: `isActive` is set only by a signed bridge message. Stale entries for those modules are deleted on the first settings broadcast.
+- The full anti-fingerprint config is never persisted to page `localStorage`.
 
 ### Internal channel security (HMAC)
 
 The isolated → MAIN channel is authenticated so a malicious page cannot disable modules or alter config with forged `postMessage` / `CustomEvent` traffic:
 
-* **`src/fb-channel.js`** — shared library (loaded first in every `content_scripts` entry): pure-JS SHA-256 / HMAC-SHA256 (synchronous, works on `http://` pages where `crypto.subtle` is unavailable) plus a deterministic `stableStringify` with sorted keys. All natives it relies on (`TextEncoder`, `JSON.stringify`, `Object.keys`, `Array.prototype.sort`, `Uint8Array`, …) are captured at `document_start` before any page script runs, and the exported API (`globalThis.__fbChannel`) is frozen so the page cannot swap methods to steal the key
+* **`src/fb-channel.js`** (isolated world) and **`src/fb-channel-main.js`** (MAIN) — shared library, loaded first in its `content_scripts` entry: pure-JS SHA-256 / HMAC-SHA256 (synchronous, works on `http://` pages where `crypto.subtle` is unavailable) plus a deterministic `stableStringify` with sorted keys. All natives it relies on (`TextEncoder`, `JSON.stringify`, `Object.keys`, `Array.prototype.sort`, `Uint8Array`, …) are captured at `document_start` before any page script runs, and the exported API is frozen so the page cannot swap methods to steal the key. It is published in three places — `globalThis.__fbChannel`, `document.documentElement.__fbChannelApi`, and `Document.prototype.__fbChannelGet` (all non-writable)
+* **The byte-identical per-world copies are deliberate.** A script path listed in several `content_scripts` entries can be injected into a document only once, so the isolated entry consumed the single injection and MAIN modules were left with no channel at all, rejecting every signed settings message (Threat Shield silent, Device Security stuck fail-closed with IndexedDB blocked). The defaults file is duplicated for the same reason — `src/security-defaults.js` (isolated world, options page, service worker) and `src/security-defaults-main.js` (MAIN) — otherwise MAIN modules silently fell back to trimmed inline defaults and ADS Block lost its builtin domain/selector lists. When you change one file, copy it over the other; verify or repair both pairs with `node tools/check-world-copies.mjs [--fix]`
 * **Key** — 32 random bytes per page load; the bridge hands it to MAIN modules via a short-lived `<html data-fb-k="...">` attribute removed after the first broadcast. The key is **never placed inside messages**
 * **Signature** — each message carries a monotonic `seq` counter and `sig = HMAC(key, stableStringify(payload without sig))`; MAIN modules verify the signature and require a strictly increasing `seq` (anti-replay)
 * **Fail-closed** — Network Security and Device Security start enabled and can only be turned off by a signed message; the anti-fingerprint `workerScriptUrl` is accepted only when it is a `chrome-extension://` URL of this extension; critical API hooks are pinned with `configurable: false`
@@ -135,14 +142,15 @@ MAIN posts `FOCUS_BLOCKER_STATS_DELTA` → isolated `stats-bridge.js` → `FB_ST
 
 ### Page scripts (MAIN and related)
 
-* `src/fb-channel.js` — settings-channel crypto primitives (HMAC-SHA256, canonical serialization)
+* `src/fb-channel.js`, `src/fb-channel-main.js` — settings-channel crypto primitives (HMAC-SHA256, canonical serialization); identical copies for the isolated and MAIN worlds
+* `src/security-defaults.js`, `src/security-defaults-main.js` — defaults, presets and settings-merge helpers; the same pair of copies
 * `src/content.js` — focus
 * `src/security.js`, `src/security-worker.js` — anti-fingerprint
 * `src/network-security.js` — fetch/XHR/WebSocket hooks (per settings)
 * `src/device-security.js` — device APIs / storage caps
 * `src/ds-block.js` — ADS Block (popups, telemetry/cosmetics DNR coordination)
 * `src/copy-helper.js` — copy UX
-* `src/threat-shield.js` — Threat Shield banner/heuristics (manifest: **top frame only**, `all_frames: false`)
+* `src/threat-shield.js` — Threat Shield banner/heuristics (banner is shown in the top frame only; the check lives in the module)
 
 ---
 

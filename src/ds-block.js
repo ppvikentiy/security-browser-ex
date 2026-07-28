@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  /** Depends on security-defaults.js (MAIN) loaded before this script. */
+  /** Depends on security-defaults-main.js (MAIN copy) loaded before this script. */
 
   const USER_GESTURE_WINDOW_MS = 900;
 
@@ -141,20 +141,40 @@
     blockDomains: new Set(),
   };
 
-  /** Fast MAIN-world boot: replay last bridge payload cached by settings-bridge. */
+  /** The only fields exchanged through the boot cache, in either direction. */
+  const DS_BLOCK_BOOT_HINT_FLAGS = [
+    "dsBlockEnabled",
+    "dsBlockBlockPopups",
+    "dsBlockCosmeticEnabled",
+    "dsBlockTelemetryEnabled",
+  ];
+
+  /**
+   * Fast MAIN-world boot: arm the hooks from the last bridge payload before page
+   * scripts run.
+   *
+   * The cache lives in page `localStorage`, so on a hostile origin it is entirely
+   * attacker-controlled. It cannot be authenticated here — the HMAC channel key is
+   * minted per page load, so nothing signed during an earlier load is verifiable
+   * now — and a page can drop the cache regardless. It is therefore read as a hint
+   * that may only raise protection above the inactive default: a cached `true`
+   * turns a guard on, while cached `false` values, lists and `pageAllowed` are
+   * ignored. Effective configuration only ever comes from a signed bridge payload.
+   */
   try {
     const raw = localStorage.getItem("__focus_blocker_ds_block_cache_v1");
-    if (raw) {
-      const obj = JSON.parse(raw);
-      if (obj && typeof obj === "object") {
-        const ds = obj.dsBlock && typeof obj.dsBlock === "object" ? obj.dsBlock : {};
-        state.merged = fbMergeDsBlockFromStorage(ds);
-        if (typeof obj.isActive === "boolean") {
-          state.isActive = obj.isActive;
-        } else {
-          state.isActive = !!state.merged.dsBlockEnabled;
-        }
+    const cached = raw ? JSON.parse(raw) : null;
+    const ds =
+      cached && typeof cached === "object" && cached.dsBlock && typeof cached.dsBlock === "object"
+        ? cached.dsBlock
+        : null;
+    if (ds && cached.isActive === true) {
+      const hint = {};
+      for (const key of DS_BLOCK_BOOT_HINT_FLAGS) {
+        if (ds[key] === true) hint[key] = true;
       }
+      state.merged = fbMergeDsBlockFromStorage(hint);
+      state.isActive = !!state.merged.dsBlockEnabled;
     }
   } catch (_e) {}
 
@@ -177,7 +197,10 @@
 
   function bumpDs(delta, subKey) {
     try {
-      const fn = globalThis.__focusBlockerStatsBump;
+      const fn =
+        globalThis.__focusBlockerStatsBump ||
+        (document.documentElement && document.documentElement.__focusBlockerStatsBump) ||
+        (typeof Document !== "undefined" && Document.prototype && Document.prototype.__focusBlockerStatsBump);
       if (typeof fn === "function")
         fn("ds", typeof delta === "number" && delta > 0 ? delta : 1, typeof subKey === "string" ? subKey : undefined);
     } catch (_e) {}
@@ -294,13 +317,19 @@
     computeBlockDomainsSet();
     updateCosmeticStyle();
 
+    // Only the flags consumed by the boot hint are cached; user lists must not be
+    // exposed to the page, and nothing else in the payload is read back.
     try {
+      const flags = {};
+      for (const key of DS_BLOCK_BOOT_HINT_FLAGS) {
+        flags[key] = !!state.merged[key];
+      }
       localStorage.setItem(
         "__focus_blocker_ds_block_cache_v1",
         JSON.stringify({
           v: 1,
           isActive: state.isActive,
-          dsBlock: p.dsBlock && typeof p.dsBlock === "object" ? p.dsBlock : {},
+          dsBlock: flags,
           ts: Date.now(),
         })
       );
@@ -309,13 +338,24 @@
 
   // HMAC channel: per-load secret key from the bridge, delivered via a short-lived
   // <html data-fb-k="..."> attribute at document_start (never inside messages).
-  const fbChannelApi = (() => {
+  // The channel itself comes from fb-channel-main.js, the MAIN-world copy of
+  // fb-channel.js (see that file's header for why the copy exists).
+  function fbResolveChannelApi() {
     try {
-      return (typeof globalThis !== "undefined" && globalThis.__fbChannel) || null;
-    } catch (_e) {
-      return null;
-    }
-  })();
+      if (typeof globalThis !== "undefined" && globalThis.__fbChannel) return globalThis.__fbChannel;
+    } catch (_e) {}
+    try {
+      const el = document && document.documentElement;
+      if (el && el.__fbChannelApi) return el.__fbChannelApi;
+    } catch (_e) {}
+    try {
+      if (typeof Document !== "undefined" && Document.prototype && typeof Document.prototype.__fbChannelGet === "function") {
+        return Document.prototype.__fbChannelGet();
+      }
+    } catch (_e) {}
+    return null;
+  }
+  let fbChannelApi = fbResolveChannelApi();
   let fbChannelKey = "";
   try {
     fbChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
@@ -326,6 +366,7 @@
 
   // Authentic payload = valid HMAC-SHA256 signature + strictly increasing seq (anti-replay).
   function fbVerifyPayload(payload) {
+    if (!fbChannelApi) fbChannelApi = fbResolveChannelApi();
     if (!fbChannelApi || !fbChannelKey || !payload || typeof payload !== "object") return false;
     const seq = payload.seq;
     if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= fbLastSeq) return false;

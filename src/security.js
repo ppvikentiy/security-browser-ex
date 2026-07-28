@@ -399,7 +399,10 @@
     fpStatBumpTs = now;
     fpStatLastSub = sk;
     try {
-      const fn = globalThis.__focusBlockerStatsBump;
+      const fn =
+        globalThis.__focusBlockerStatsBump ||
+        (document.documentElement && document.documentElement.__focusBlockerStatsBump) ||
+        (typeof Document !== "undefined" && Document.prototype && Document.prototype.__focusBlockerStatsBump);
       if (typeof fn === "function") fn("fpSpoof", 1, sk);
     } catch (_e) {}
   }
@@ -1727,13 +1730,24 @@
 
   // HMAC channel: per-load secret key from the bridge, delivered via a short-lived
   // <html data-fb-k="..."> attribute at document_start (never inside messages).
-  const fbChannelApi = (() => {
+  // The channel itself comes from fb-channel-main.js, the MAIN-world copy of
+  // fb-channel.js (see that file's header for why the copy exists).
+  function fbResolveChannelApi() {
     try {
-      return (typeof globalThis !== "undefined" && globalThis.__fbChannel) || null;
-    } catch (_e) {
-      return null;
-    }
-  })();
+      if (typeof globalThis !== "undefined" && globalThis.__fbChannel) return globalThis.__fbChannel;
+    } catch (_e) {}
+    try {
+      const el = document && document.documentElement;
+      if (el && el.__fbChannelApi) return el.__fbChannelApi;
+    } catch (_e) {}
+    try {
+      if (typeof Document !== "undefined" && Document.prototype && typeof Document.prototype.__fbChannelGet === "function") {
+        return Document.prototype.__fbChannelGet();
+      }
+    } catch (_e) {}
+    return null;
+  }
+  let fbChannelApi = fbResolveChannelApi();
   let fbChannelKey = "";
   try {
     fbChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
@@ -1744,6 +1758,7 @@
 
   // Authentic payload = valid HMAC-SHA256 signature + strictly increasing seq (anti-replay).
   function fbVerifyPayload(payload) {
+    if (!fbChannelApi) fbChannelApi = fbResolveChannelApi();
     if (!fbChannelApi || !fbChannelKey || !payload || typeof payload !== "object") return false;
     const seq = payload.seq;
     if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= fbLastSeq) return false;

@@ -4,13 +4,24 @@
   // HMAC channel: per-load secret key from the bridge, delivered via a short-lived
   // <html data-fb-k="..."> attribute at document_start (never inside messages).
   // Kept inside this IIFE so the page cannot reach or replace these bindings.
-  const fbNetChannelApi = (() => {
+  // The channel itself comes from fb-channel-main.js, the MAIN-world copy of
+  // fb-channel.js (see that file's header for why the copy exists).
+  function fbResolveNetChannelApi() {
     try {
-      return (typeof globalThis !== "undefined" && globalThis.__fbChannel) || null;
-    } catch (_e) {
-      return null;
-    }
-  })();
+      if (typeof globalThis !== "undefined" && globalThis.__fbChannel) return globalThis.__fbChannel;
+    } catch (_e) {}
+    try {
+      const el = document && document.documentElement;
+      if (el && el.__fbChannelApi) return el.__fbChannelApi;
+    } catch (_e) {}
+    try {
+      if (typeof Document !== "undefined" && Document.prototype && typeof Document.prototype.__fbChannelGet === "function") {
+        return Document.prototype.__fbChannelGet();
+      }
+    } catch (_e) {}
+    return null;
+  }
+  let fbNetChannelApi = fbResolveNetChannelApi();
   let fbNetChannelKey = "";
   try {
     fbNetChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
@@ -21,6 +32,7 @@
 
   // Authentic payload = valid HMAC-SHA256 signature + strictly increasing seq (anti-replay).
   function fbNetVerifyPayload(payload) {
+    if (!fbNetChannelApi) fbNetChannelApi = fbResolveNetChannelApi();
     if (!fbNetChannelApi || !fbNetChannelKey || !payload || typeof payload !== "object") return false;
     const seq = payload.seq;
     if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= fbNetLastSeq) return false;
@@ -36,13 +48,13 @@
     return true;
   }
 
-  /** Depends on security-defaults.js (MAIN) loaded before this script. */
+  /** Depends on security-defaults-main.js (MAIN copy) loaded before this script. */
 
   let fbMergeNetworkFromStorage = typeof mergeNetworkFromStorage === "function" ? mergeNetworkFromStorage : null;
   let fbBlockedNetworkHostForMerge = typeof blockedNetworkHostForMerge === "function" ? blockedNetworkHostForMerge : null;
   let fbIsLocalOrPrivatePageHost = typeof isLocalOrPrivatePageHost === "function" ? isLocalOrPrivatePageHost : null;
 
-  // Fallback: some pages/browsers may not inject `security-defaults.js` into MAIN world.
+  // Fallback: some pages/browsers may not inject `security-defaults-main.js` into MAIN world.
   // Keep Network Security functional by defining the minimum subset inline.
   if (!fbMergeNetworkFromStorage || !fbBlockedNetworkHostForMerge || !fbIsLocalOrPrivatePageHost) {
     const DEFAULT_NETWORK_SECURITY_FALLBACK = {
@@ -189,7 +201,10 @@
 
   function bumpNet(delta, subKey) {
     try {
-      const fn = globalThis.__focusBlockerStatsBump;
+      const fn =
+        globalThis.__focusBlockerStatsBump ||
+        (document.documentElement && document.documentElement.__focusBlockerStatsBump) ||
+        (typeof Document !== "undefined" && Document.prototype && Document.prototype.__focusBlockerStatsBump);
       if (typeof fn === "function")
         fn("netJs", typeof delta === "number" && delta > 0 ? delta : 1, typeof subKey === "string" ? subKey : undefined);
     } catch (_e) {}
@@ -383,17 +398,6 @@
     const p = payload && typeof payload === "object" ? /** @type {{ isActive?: boolean, network?: Record<string, unknown> }}*/ (payload) : {};
     state.isActive = !!p.isActive;
     state.merged = fbMergeNetworkFromStorage((p.network && typeof p.network === "object") ? p.network : {});
-    try {
-      localStorage.setItem(
-        "__focus_blocker_network_cache_v1",
-        JSON.stringify({
-          v: 1,
-          isActive: state.isActive,
-          network: p.network && typeof p.network === "object" ? p.network : {},
-          ts: Date.now(),
-        })
-      );
-    } catch (_e) {}
   }
 
   window.addEventListener("message", (event) => {

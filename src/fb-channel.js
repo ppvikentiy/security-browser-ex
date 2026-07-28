@@ -5,8 +5,18 @@
  * crypto.subtle is unavailable) plus a deterministic stable serializer.
  *
  * Loaded first in every content_scripts entry (isolated bridge + MAIN modules) at
- * document_start. Exposed via globalThis.__fbChannel so sibling files in the same
- * world can capture the reference before page scripts run.
+ * document_start, and published on globalThis.__fbChannel, an <html> expando, and
+ * Document.prototype.__fbChannelGet (see fbPublish for why three carriers).
+ *
+ * TWO IDENTICAL COPIES EXIST: fb-channel.js (isolated entry) and fb-channel-main.js
+ * (MAIN entries). They must stay byte-identical — change one, copy it over the other.
+ * The duplication is required, not stylistic: a script path listed in several
+ * content_scripts entries can be injected into a document only once, so the isolated
+ * entry consumed the single injection and every MAIN module was left without a
+ * channel, rejecting all signed settings (Threat Shield silent, Device Security stuck
+ * fail-closed with IndexedDB blocked). Distinct paths give each world its own copy.
+ * Two copies also mean two independent frozen API instances — that is fine, since the
+ * worlds authenticate each other by the shared per-load key, not by object identity.
  *
  * Tamper resistance: this file runs in the MAIN world where the page can later
  * patch primordials (TextEncoder.prototype.encode, Uint8Array.prototype.set,
@@ -23,9 +33,77 @@
 (() => {
   "use strict";
 
-  try {
-    if (typeof globalThis !== "undefined" && globalThis.__fbChannel) return;
-  } catch (_e) {}
+  /**
+   * Where the API is published for sibling files of the same world.
+   *
+   * `globalThis` is the normal carrier. The two DOM carriers are belt-and-braces
+   * for hosts where scripts of one content_scripts entry do not share a global
+   * object: `<html>` expandos cover a shared DOM wrapper, and the
+   * `Document.prototype` getter covers the case where each script gets its own
+   * wrapper but prototypes stay shared (the surface device-security's IndexedDB
+   * shims already rely on).
+   *
+   * In the MAIN world the DOM carriers are reachable by the page — the same
+   * trade-off this file already documents: the primitives are not secret, security
+   * rests on the per-load key. All properties are non-writable and
+   * non-configurable so the page cannot swap in an API that forges signatures.
+   */
+  const DOM_PROP = "__fbChannelApi";
+  const PROTO_GETTER = "__fbChannelGet";
+
+  function fbFindChannel() {
+    try {
+      if (typeof globalThis !== "undefined" && globalThis.__fbChannel) return globalThis.__fbChannel;
+    } catch (_e) {}
+    try {
+      const el = typeof document !== "undefined" && document ? document.documentElement : null;
+      if (el && el[DOM_PROP]) return el[DOM_PROP];
+    } catch (_e) {}
+    try {
+      if (typeof Document !== "undefined" && Document.prototype && typeof Document.prototype[PROTO_GETTER] === "function") {
+        return Document.prototype[PROTO_GETTER]();
+      }
+    } catch (_e) {}
+    return null;
+  }
+
+  function fbPublish(value) {
+    const desc = { value, configurable: false, writable: false, enumerable: false };
+    try {
+      if (typeof globalThis !== "undefined" && !globalThis.__fbChannel) {
+        Object.defineProperty(globalThis, "__fbChannel", desc);
+      }
+    } catch (_e) {
+      try {
+        globalThis.__fbChannel = value;
+      } catch (_e2) {}
+    }
+    try {
+      const el = typeof document !== "undefined" && document ? document.documentElement : null;
+      if (el && !el[DOM_PROP]) Object.defineProperty(el, DOM_PROP, desc);
+    } catch (_e) {}
+    // Reliable cross-file carrier (see comment above). Closure holds `value` so the
+    // getter always returns the frozen API installed by the first publisher.
+    try {
+      if (typeof Document !== "undefined" && Document.prototype && !Document.prototype[PROTO_GETTER]) {
+        const held = value;
+        Object.defineProperty(Document.prototype, PROTO_GETTER, {
+          value: function fbChannelGet() {
+            return held;
+          },
+          configurable: false,
+          writable: false,
+          enumerable: false,
+        });
+      }
+    } catch (_e) {}
+  }
+
+  const existing = fbFindChannel();
+  if (existing) {
+    fbPublish(existing);
+    return;
+  }
 
   // --- Captured primordials (genuine at document_start) ---
   const U8 = Uint8Array;
@@ -39,7 +117,6 @@
   const _charCodeAt = String.prototype.charCodeAt;
   const _String = String;
   const _freeze = Object.freeze;
-  const _defineProperty = Object.defineProperty;
   const _crypto = typeof crypto !== "undefined" ? crypto : null;
   const _getRandomValues = _crypto && _crypto.getRandomValues ? _crypto.getRandomValues.bind(_crypto) : null;
   const _encode = (() => {
@@ -330,11 +407,5 @@
     _freeze(api);
   } catch (_e) {}
 
-  try {
-    _defineProperty(globalThis, "__fbChannel", { value: api, configurable: false, writable: false, enumerable: false });
-  } catch (_e) {
-    try {
-      globalThis.__fbChannel = api;
-    } catch (_e2) {}
-  }
+  fbPublish(api);
 })();
