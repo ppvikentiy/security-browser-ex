@@ -448,6 +448,9 @@ function postThreatShieldSettings(result, pageAllowsModules) {
 
   const isActive = !!(merged.threatShieldEnabled && pageAllowsModules);
 
+  const langRaw = result && result.optionsUiLanguage;
+  const uiLang = langRaw === "en" || langRaw === "uk" || langRaw === "ru" ? langRaw : "ru";
+
   const payload = {
     type: "FOCUS_BLOCKER_THREAT_SHIELD_SETTINGS",
     isActive,
@@ -455,6 +458,7 @@ function postThreatShieldSettings(result, pageAllowsModules) {
     threatShield: merged,
     threatBuiltinHostPatterns: builtins.builtinHostPatterns,
     threatStackedTldTails: builtins.stackedTldTails,
+    optionsUiLanguage: uiLang,
   };
   fbSignPayload(payload);
 
@@ -522,6 +526,7 @@ const ALL_KEYS = [
   "extensionGloballyEnabled",
   "focusBlockingEnabled",
   "focusBlockingStrict",
+  "optionsUiLanguage",
   ...fbConcatModuleStorageKeys(),
 ];
 
@@ -643,10 +648,22 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 
 try {
   if (chrome.storage && chrome.storage.session && chrome.storage.session.onChanged) {
-    chrome.storage.session.onChanged.addListener((changes, areaName) => {
-      if (areaName !== "session") return;
+    // StorageArea.onChanged is (changes) only — unlike chrome.storage.onChanged (changes, areaName).
+    chrome.storage.session.onChanged.addListener((changes) => {
       if (!changes || !changes[SESSION_PAUSE_KEY]) return;
       refreshStorageAndBroadcastFast();
     });
   }
 } catch (e) {}
+
+try {
+  if (chrome.runtime && typeof chrome.runtime.onMessage === "object") {
+    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+      if (!msg || msg.type !== "FB_REFRESH_SETTINGS") return;
+      refreshStorageAndBroadcastFast();
+      try {
+        sendResponse({ ok: true });
+      } catch (_e) {}
+    });
+  }
+} catch (_e) {}

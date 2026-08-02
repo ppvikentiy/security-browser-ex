@@ -6,12 +6,22 @@
   const DEFAULT_BORDER_OPACITY = 100;
   const DEFAULT_EXCLUDED_DOMAINS = [];
 
-  const STORAGE_KEYS = ["highlightEnabled", "borderColor", "borderOpacity", "excludedDomains"];
+  const STORAGE_KEYS = [
+    "highlightEnabled",
+    "borderColor",
+    "borderOpacity",
+    "excludedDomains",
+    "extensionGloballyEnabled",
+  ];
+  const SESSION_PAUSE_KEY = "focusBlockerPausedTabIds";
 
   let highlightEnabled = DEFAULT_HIGHLIGHT_ENABLED;
   let borderColor = DEFAULT_BORDER_COLOR;
   let borderOpacity = DEFAULT_BORDER_OPACITY;
   let isEnabled = false;
+  let refreshGeneration = 0;
+  let currentElement = null;
+  let copyInProgress = false;
 
   function getStorageArea() {
     // `sync` can be unavailable/limited in some Chromium forks; use `local` as the canonical store.
@@ -91,39 +101,52 @@
   }
 
   function refreshFromStorage() {
+    const myGeneration = ++refreshGeneration;
     const area = getStorageArea();
-    function apply(result) {
+
+    function finish(result, paused) {
+      if (myGeneration !== refreshGeneration) return;
       highlightEnabled = result.highlightEnabled !== undefined ? result.highlightEnabled : DEFAULT_HIGHLIGHT_ENABLED;
       borderColor = result.borderColor || DEFAULT_BORDER_COLOR;
       borderOpacity = result.borderOpacity !== undefined ? result.borderOpacity : DEFAULT_BORDER_OPACITY;
       const rawExcluded = Array.isArray(result.excludedDomains) ? result.excludedDomains : DEFAULT_EXCLUDED_DOMAINS;
       const excludedDomains = fbNormalizeExcludedDomainsListFromStorage(rawExcluded);
-      isEnabled = !isExcluded(excludedDomains);
+      const globalOn = result.extensionGloballyEnabled !== false;
+      isEnabled = globalOn && !isExcluded(excludedDomains) && !paused;
       updateStyles();
+      if (!isEnabled) {
+        clearAllHighlights();
+        currentElement = null;
+      }
     }
+
+    function applyWithPause(result) {
+      const snapshot = result && typeof result === "object" ? result : {};
+      try {
+        if (!chrome || !chrome.runtime || typeof chrome.runtime.sendMessage !== "function") {
+          finish(snapshot, false);
+          return;
+        }
+        chrome.runtime.sendMessage({ type: "FB_IS_TAB_PAUSED" }, (resp) => {
+          if (myGeneration !== refreshGeneration) return;
+          const paused = chrome.runtime.lastError ? false : !!(resp && resp.paused);
+          finish(snapshot, paused);
+        });
+      } catch (_e) {
+        finish(snapshot, false);
+      }
+    }
+
     if (!area || typeof area.get !== "function") {
-      apply({});
+      applyWithPause({});
       return;
     }
     area.get(STORAGE_KEYS, (result) => {
       void chrome.runtime.lastError;
-      apply(result || {});
+      if (myGeneration !== refreshGeneration) return;
+      applyWithPause(result || {});
     });
   }
-
-  maybeMigrateSyncToLocal(STORAGE_KEYS, () => {
-    refreshFromStorage();
-  });
-
-  try {
-    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
-      chrome.storage.onChanged.addListener((changes, namespace) => {
-        if (namespace !== "local" && namespace !== "sync") return;
-        if (!changes || !Object.keys(changes).length) return;
-        refreshFromStorage();
-      });
-    }
-  } catch (_e) {}
 
   const style = document.createElement("style");
   const className = `highlight_asdfqweafsdfa`;
@@ -165,6 +188,14 @@
     }
   }
 
+  function clearAllHighlights() {
+    document.querySelectorAll(`.${className}`).forEach((el) => {
+      try {
+        el.classList.remove(className);
+      } catch (e) {}
+    });
+  }
+
   updateStyles();
 
   if (document.head) {
@@ -175,16 +206,37 @@
     });
   }
 
-  let currentElement = null;
-  let copyInProgress = false;
+  maybeMigrateSyncToLocal(STORAGE_KEYS, () => {
+    refreshFromStorage();
+  });
 
-  function clearAllHighlights() {
-    document.querySelectorAll(`.${className}`).forEach((el) => {
-      try {
-        el.classList.remove(className);
-      } catch (e) {}
-    });
-  }
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener((changes, namespace) => {
+        if (namespace !== "local" && namespace !== "sync") return;
+        if (!changes || !Object.keys(changes).length) return;
+        refreshFromStorage();
+      });
+    }
+  } catch (_e) {}
+
+  try {
+    if (chrome.storage && chrome.storage.session && chrome.storage.session.onChanged) {
+      chrome.storage.session.onChanged.addListener((changes) => {
+        if (!changes || !changes[SESSION_PAUSE_KEY]) return;
+        refreshFromStorage();
+      });
+    }
+  } catch (_e) {}
+
+  try {
+    if (chrome.runtime && typeof chrome.runtime.onMessage === "object") {
+      chrome.runtime.onMessage.addListener((msg) => {
+        if (!msg || msg.type !== "FB_REFRESH_SETTINGS") return;
+        refreshFromStorage();
+      });
+    }
+  } catch (_e) {}
 
   document.addEventListener("mousemove", function (event) {
     if (!isEnabled || copyInProgress) return;

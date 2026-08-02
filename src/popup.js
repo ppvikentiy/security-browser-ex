@@ -4,6 +4,23 @@ function $(id) {
   return document.getElementById(id);
 }
 
+function i18nT(key, vars) {
+  try {
+    if (typeof FbI18n !== "undefined" && FbI18n && typeof FbI18n.t === "function") {
+      return FbI18n.t(key, vars);
+    }
+  } catch (_e) {}
+  return key;
+}
+
+function applyPopupLanguage(lang) {
+  try {
+    if (typeof FbI18n !== "undefined" && FbI18n && typeof FbI18n.setUiLang === "function") {
+      FbI18n.setUiLang(lang, document);
+    }
+  } catch (_e) {}
+}
+
 function setToggle(el, on) {
   if (!el) return;
   el.classList.toggle("active", !!on);
@@ -33,6 +50,8 @@ function refresh() {
     void chrome.runtime.lastError;
     if (!state) return;
 
+    applyPopupLanguage(state.optionsUiLanguage);
+
     const masterOn = !!state.extensionGloballyEnabled;
     setToggle($("extensionGloballyEnabled"), masterOn);
     setToggle($("focusBlockingEnabled"), !!state.focusBlockingEnabled);
@@ -57,7 +76,7 @@ function refresh() {
 
     if (pauseBtn) {
       pauseBtn.disabled = !injectable;
-      pauseBtn.textContent = state.paused ? "Снять паузу на этой вкладке" : "Временно отключить на этой вкладке";
+      pauseBtn.textContent = state.paused ? i18nT("popup_unpause") : i18nT("popup_pause");
     }
     if (addBtn) {
       addBtn.disabled = !injectable || !!state.alreadyExcluded;
@@ -65,15 +84,13 @@ function refresh() {
 
     if (hint) {
       if (!injectable) {
-        hint.textContent = "Откройте вкладку с адресом http или https.";
+        hint.textContent = i18nT("popup_hint_non_http");
       } else if (state.alreadyExcluded) {
-        hint.textContent = "Сайт уже в списке исключений (настройки → исключённые домены).";
+        hint.textContent = i18nT("popup_hint_excluded");
       } else if (state.paused) {
-        hint.textContent =
-          "На этой вкладке всё отключено до перехода по другому URL или закрытия вкладки.";
+        hint.textContent = i18nT("popup_hint_paused");
       } else {
-        hint.textContent =
-          "Пауза только для этой вкладки; после смены страницы действие расширения снова как в настройках.";
+        hint.textContent = i18nT("popup_hint_ok");
       }
     }
   });
@@ -104,7 +121,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const err = chrome.runtime.lastError;
         if (err || !resp || resp.ok !== true) {
           const hint = $("statusHint");
-          if (hint) hint.textContent = "Не удалось добавить в исключения. Попробуйте ещё раз.";
+          if (hint) hint.textContent = i18nT("popup_exclude_fail");
           return;
         }
         refresh();
@@ -124,8 +141,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   try {
     if (chrome.storage.session && chrome.storage.session.onChanged) {
-      chrome.storage.session.onChanged.addListener((changes, area) => {
-        if (area === "session" && changes && changes.focusBlockerPausedTabIds) refresh();
+      // StorageArea.onChanged is (changes) only — unlike chrome.storage.onChanged (changes, areaName).
+      chrome.storage.session.onChanged.addListener((changes) => {
+        if (changes && changes.focusBlockerPausedTabIds) refresh();
       });
     }
   } catch (e) {}

@@ -24,6 +24,7 @@ const STORAGE_GET_KEYS = [
   "focusBlockingEnabled",
   "focusBlockingStrict",
   "optionsReduceAnimations",
+  "optionsUiLanguage",
   // UI-only helper: remember the last selected Navigator/UA preset
   "securityNavPresetId",
   ...SECURITY_STORAGE_KEYS,
@@ -41,14 +42,81 @@ const STATS_STORAGE_KEY = "focusBlockerStatsByHost";
 let statsByHostCache = {};
 let statsDetailHostOpen = "";
 
+function i18nT(key, vars) {
+  try {
+    if (typeof FbI18n !== "undefined" && FbI18n && typeof FbI18n.t === "function") {
+      return FbI18n.t(key, vars);
+    }
+  } catch (_e) {}
+  return key;
+}
+
+function normalizeOptionsUiLanguage(v) {
+  try {
+    if (typeof FbI18n !== "undefined" && FbI18n && typeof FbI18n.normalizeUiLang === "function") {
+      return FbI18n.normalizeUiLang(v);
+    }
+  } catch (_e) {}
+  const s = String(v == null ? "" : v)
+    .trim()
+    .toLowerCase();
+  return s === "en" || s === "uk" || s === "ru" ? s : "ru";
+}
+
+function applyOptionsUiLanguage(lang) {
+  const next = normalizeOptionsUiLanguage(lang);
+  const sel = document.getElementById("optionsUiLanguage");
+  if (sel && sel.value !== next) sel.value = next;
+  try {
+    if (typeof FbI18n !== "undefined" && FbI18n && typeof FbI18n.setUiLang === "function") {
+      FbI18n.setUiLang(next, document);
+    }
+  } catch (_e) {}
+  refreshI18nDependentUi();
+  return next;
+}
+
+function refreshI18nDependentUi() {
+  try {
+    const presetEl = document.getElementById("securityPreset");
+    if (presetEl) updatePresetHintText(presetEl.value);
+  } catch (_e) {}
+  try {
+    refreshNetworkWebRtcHint();
+  } catch (_e2) {}
+  try {
+    refreshPrivacyIsolationHints();
+  } catch (_e3) {}
+  try {
+    const noneOpt = document.querySelector("#securityNavPreset option[value='none']");
+    if (noneOpt) noneOpt.textContent = i18nT("nav_none_preset");
+  } catch (_e4) {}
+  try {
+    if (statsDetailHostOpen) showStatsDetail(statsDetailHostOpen);
+  } catch (_e5) {}
+}
+
+function getStatsCategoryTitle(cat) {
+  const map = {
+    focus: "stats_cat_focus",
+    fpSpoof: "stats_cat_fp",
+    netJs: "stats_cat_net",
+    dnrBlock: "stats_cat_dnr_block",
+    dnrModify: "stats_cat_dnr_modify",
+    device: "stats_cat_device",
+    ds: "stats_cat_ds",
+  };
+  return map[cat] ? i18nT(map[cat]) : cat;
+}
+
 const STATS_CATEGORY_TITLE = {
-  focus: "Фокус и видимость вкладки",
-  fpSpoof: "Анти‑фингерпринт (подмена в JavaScript)",
-  netJs: "Сеть на странице (Network Security)",
-  dnrBlock: "Declarative Net Request — блокировка",
-  dnrModify: "Declarative Net Request — подмена заголовков",
-  device: "Device Security",
-  ds: "ADS Block (блок рекламы и телеметрии)",
+  focus: true,
+  fpSpoof: true,
+  netJs: true,
+  dnrBlock: true,
+  dnrModify: true,
+  device: true,
+  ds: true,
 };
 
 /** Человекочитаемые названия подфункций (ключ — код из расширения). */
@@ -134,26 +202,26 @@ function statsHumanSubLabel(cat, sk) {
   if (map && map[skSafe]) return map[skSafe];
   if (skSafe.startsWith("capture_DOM_")) {
     const ev = skSafe.slice("capture_DOM_".length);
-    return `Подфункция: перехват фазы захвата DOM для события «${ev}»`;
+    return i18nT("stats_sub_capture", { ev });
   }
   if (skSafe.startsWith("document_visibility_")) {
     const p = skSafe.slice("document_visibility_".length);
-    return `Подфункция: подмена чтения document.${p}`;
+    return i18nT("stats_sub_visibility", { p });
   }
   if (skSafe.startsWith("inline_handler_")) {
-    return `Подфункция: скрытие inline handler ${skSafe.slice("inline_handler_".length)}`;
+    return i18nT("stats_sub_inline", { name: skSafe.slice("inline_handler_".length) });
   }
   if (skSafe.startsWith("embed_") && skSafe.includes("_assign_blocked"))
-    return `Подфункция: блок назначения URL (${skSafe})`;
-  if (skSafe.startsWith("embed_setAttribute_")) return `Подфункция: блок setAttribute (${skSafe})`;
+    return i18nT("stats_sub_embed_assign", { sk: skSafe });
+  if (skSafe.startsWith("embed_setAttribute_")) return i18nT("stats_sub_embed_attr", { sk: skSafe });
   if (skSafe.startsWith("network_regex_slot_"))
-    return `Подфункция: блокировка по правилу Network Security (слот ${skSafe.slice("network_regex_slot_".length)})`;
+    return i18nT("stats_sub_net_slot", { n: skSafe.slice("network_regex_slot_".length) });
   if (skSafe.startsWith("ds_telemetry_slot_"))
-    return `Подфункция: блок телеметрии по слоту ${skSafe.slice("ds_telemetry_slot_".length)}`;
+    return i18nT("stats_sub_ds_slot", { n: skSafe.slice("ds_telemetry_slot_".length) });
   if (skSafe.startsWith("privacy_pack_slot_"))
-    return `Подфункция: Privacy pack — блок по слоту ${skSafe.slice("privacy_pack_slot_".length)}`;
-  if (skSafe.startsWith("rule_")) return `Подфункция: срабатывание правила DNR id=${skSafe.slice(5)}`;
-  return `Подфункция: ${skSafe.replace(/_/g, " ")}`;
+    return i18nT("stats_sub_pp_slot", { n: skSafe.slice("privacy_pack_slot_".length) });
+  if (skSafe.startsWith("rule_")) return i18nT("stats_sub_rule", { id: skSafe.slice(5) });
+  return i18nT("stats_sub_prefix", { name: skSafe.replace(/_/g, " ") });
 }
 
 function hideStatsDetail() {
@@ -178,8 +246,7 @@ function showStatsDetail(host) {
   if (!cats.length) {
     const p = document.createElement("p");
     p.className = "stats-muted";
-    p.textContent =
-      "Для этого домена нет сохранённой детализации (данные собраны до обновления или только суммы по столбцам). Откройте сайт заново после обновления расширения.";
+    p.textContent = i18nT("stats_no_detail");
     body.appendChild(p);
     panel.hidden = false;
     return;
@@ -191,7 +258,7 @@ function showStatsDetail(host) {
 
     const funcHead = document.createElement("div");
     funcHead.className = "stats-detail-func";
-    funcHead.textContent = STATS_CATEGORY_TITLE[cat] || cat;
+    funcHead.textContent = getStatsCategoryTitle(cat);
     section.appendChild(funcHead);
 
     const subs = bd[cat];
@@ -317,11 +384,9 @@ function updatePresetHintText(presetKey) {
   const hint = document.getElementById("securityPresetHint");
   if (!hint) return;
   if (presetKey === "custom") {
-    hint.textContent =
-      "Custom: WebGL vendor/renderer применяются только в этом режиме. Screen/CPU значения также берутся из полей ниже.";
+    hint.textContent = i18nT("sec_hint_custom");
   } else {
-    hint.textContent =
-      "Laptop/Desktop/Mobile: при выборе профиля подставляются Screen/CPU. WebGL vendor/renderer настраиваются только в Custom (в остальных режимах WebGL выбирается алгоритмом).";
+    hint.textContent = i18nT("sec_hint_preset");
   }
 }
 
@@ -505,7 +570,7 @@ function refreshPrivacyIsolationHints() {
   /** @param {string} label @param {chrome.types.ChromeSetting | undefined} setObj */
   function line(label, setObj) {
     if (!setObj || typeof setObj.get !== "function") {
-      return Promise.resolve(`${label}: недоступно.`);
+      return Promise.resolve(i18nT("privacy_hint_unavailable", { label }));
     }
     return new Promise((resolve) => {
       try {
@@ -513,19 +578,25 @@ function refreshPrivacyIsolationHints() {
           void chrome.runtime.lastError;
           const errMsg = chrome.runtime.lastError ? chrome.runtime.lastError.message : "";
           if (errMsg) {
-            resolve(`${label}: ошибка (${errMsg}).`);
+            resolve(i18nT("privacy_hint_error", { label, err: errMsg }));
             return;
           }
           const lvl = d && d.levelOfControl ? String(d.levelOfControl) : "—";
           let valRaw = "";
           if (d && Object.prototype.hasOwnProperty.call(d, "value")) {
             valRaw =
-              typeof d.value === "boolean" ? (d.value ? "вкл" : "выкл") : d.value !== undefined && d.value !== null ? String(d.value) : "—";
+              typeof d.value === "boolean"
+                ? d.value
+                  ? i18nT("privacy_hint_on")
+                  : i18nT("privacy_hint_off")
+                : d.value !== undefined && d.value !== null
+                  ? String(d.value)
+                  : "—";
           } else valRaw = "—";
-          resolve(`${label}: ${valRaw}; контроль: ${lvl}`);
+          resolve(i18nT("privacy_hint_line", { label, val: valRaw, lvl }));
         });
       } catch (_e) {
-        resolve(`${label}: ошибка.`);
+        resolve(i18nT("privacy_hint_error_short", { label }));
       }
     });
   }
@@ -702,19 +773,19 @@ function refreshNetworkWebRtcHint() {
   chrome.privacy.network.webRTCIPHandlingPolicy.get({}, (d) => {
     const err = chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError : null;
     if (err) {
-      hint.textContent = "WebRTC: не удалось прочитать политику браузера.";
+      hint.textContent = i18nT("webrtc_read_fail");
       return;
     }
     const lvl = d && d.levelOfControl ? String(d.levelOfControl) : "";
     const val = d && d.value != null ? String(d.value) : "";
     if (lvl === "controllable_by_this_extension") {
-      hint.textContent = `Текущее значение Chrome: ${val}. Расширение может менять политику.`;
+      hint.textContent = i18nT("webrtc_controllable", { val });
     } else if (lvl === "controlled_by_other_extensions") {
-      hint.textContent = `Сейчас ${val}, но настройку переопределяет другое расширение.`;
+      hint.textContent = i18nT("webrtc_other_ext", { val });
     } else if (lvl === "not_controllable") {
-      hint.textContent = `Политика зафиксирована администратором (${val}).`;
+      hint.textContent = i18nT("webrtc_admin", { val });
     } else {
-      hint.textContent = `Chrome: ${val} (контроль: ${lvl || "—"}).`;
+      hint.textContent = i18nT("webrtc_other", { val, lvl: lvl || "—" });
     }
   });
 }
@@ -732,7 +803,7 @@ function populateSecurityNavPresetSelect() {
 
   const none = document.createElement("option");
   none.value = "none";
-  none.textContent = "— Не применять —";
+  none.textContent = i18nT("nav_none_preset");
   sel.appendChild(none);
 
   const groups = Array.isArray(SECURITY_NAV_PRESET_GROUPS) ? SECURITY_NAV_PRESET_GROUPS : [];
@@ -1027,6 +1098,7 @@ function applyOptionsFromStorageResult(result) {
   setToggleActive("focusBlockingStrict", result.focusBlockingStrict === true);
   setToggleActive("optionsReduceAnimations", !!result.optionsReduceAnimations);
   syncReduceMotionClassFromToggle();
+  applyOptionsUiLanguage(result.optionsUiLanguage);
 
   applySecurityUI(mergeSecurityFromStorage(result));
 
@@ -1063,6 +1135,15 @@ maybeMigrateSyncToLocal(STORAGE_GET_KEYS, () => {
     applyOptionsFromStorageResult(result || {});
   });
 });
+
+(function initUiLanguageSelect() {
+  const sel = document.getElementById("optionsUiLanguage");
+  if (!sel) return;
+  sel.addEventListener("change", () => {
+    applyOptionsUiLanguage(sel.value);
+    saveSettings();
+  });
+})();
 
 document.querySelectorAll(".toggle[data-event]").forEach((toggle) => {
   toggle.addEventListener("click", function () {
@@ -1490,6 +1571,7 @@ function buildSettingsPayload() {
     focusBlockingEnabled: toggleActive("focusBlockingEnabled"),
     focusBlockingStrict: toggleActive("focusBlockingStrict"),
     optionsReduceAnimations: toggleActive("optionsReduceAnimations"),
+    optionsUiLanguage: normalizeOptionsUiLanguage(document.getElementById("optionsUiLanguage")?.value),
     securityNavPresetId: document.getElementById("securityNavPreset")?.value || "none",
     ...sec,
     ...net,
@@ -1502,6 +1584,7 @@ function buildSettingsPayload() {
 }
 
 let savingInFlight = false;
+let saveAgainAfterFlight = false;
 let saveTimer = null;
 
 function saveToastHideMs() {
@@ -1522,9 +1605,14 @@ function showSavedToast() {
 }
 
 function flushSaveNow() {
-  if (savingInFlight) return;
+  if (savingInFlight) {
+    // A write is in flight — queue one more flush from the latest DOM after it finishes.
+    saveAgainAfterFlight = true;
+    return;
+  }
 
   savingInFlight = true;
+  saveAgainAfterFlight = false;
   const payload = buildSettingsPayload();
 
   const area = getStorageArea();
@@ -1546,6 +1634,10 @@ function flushSaveNow() {
     }
 
     savingInFlight = false;
+    if (saveAgainAfterFlight) {
+      saveAgainAfterFlight = false;
+      flushSaveNow();
+    }
   });
 }
 
@@ -1720,67 +1812,5 @@ function refreshStatsPanel() {
       }
     });
   });
-})();
-
-(function initAboutPanel() {
-  const versionEl = document.getElementById("aboutVersion");
-  const textEl = document.getElementById("aboutPrinciplesText");
-  const langButtons = document.querySelectorAll(".about-lang-btn[data-lang]");
-  if (!textEl || !langButtons.length) return;
-
-  try {
-    if (versionEl && chrome.runtime && chrome.runtime.getManifest) {
-      const manifest = chrome.runtime.getManifest();
-      if (manifest && manifest.version) versionEl.textContent = manifest.version;
-    }
-  } catch (_e) {
-    if (versionEl) versionEl.textContent = "2.5.0";
-  }
-
-  const PRINCIPLES = {
-    ru: [
-      "\u041c\u043d\u043e\u0433\u0438\u0435 \u0441\u0430\u0439\u0442\u044b \u0441\u043e\u0431\u0438\u0440\u0430\u044e\u0442 \u0441\u043b\u0438\u0448\u043a\u043e\u043c \u043c\u043d\u043e\u0433\u043e \u0438\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u0438. \u0412 \u0442\u043e\u043c \u0447\u0438\u0441\u043b\u0435 \u0442\u0443 \u0438\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u044e, \u043a\u043e\u0442\u043e\u0440\u0430\u044f \u0438\u043c \u043d\u0435 \u043d\u0443\u0436\u043d\u0430. \u042d\u0442\u043e \u0443\u0436\u0435 \u0432\u043e\u0448\u043b\u043e \u0432 \u043f\u0440\u0438\u0432\u044b\u0447\u043a\u0443 \u043c\u043d\u043e\u0433\u0438\u0445 \u043e\u0440\u0433\u0430\u043d\u0438\u0437\u0430\u0446\u0438\u0439 \u0438 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0439.",
-      "\u0418\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u044f, \u043a\u043e\u0442\u043e\u0440\u0443\u044e \u043e\u043d\u0438 \u0441\u043e\u0431\u0438\u0440\u0430\u044e\u0442, \u043c\u043e\u0436\u0435\u0442 \u043f\u0440\u043e\u0441\u0442\u043e \u0445\u0440\u0430\u043d\u0438\u0442\u044c\u0441\u044f \u0443 \u044d\u0442\u0438\u0445 \u043e\u0440\u0433\u0430\u043d\u0438\u0437\u0430\u0446\u0438\u0439, \u043c\u043e\u0436\u0435\u0442 \u043f\u0435\u0440\u0435\u0434\u0430\u0432\u0430\u0442\u044c\u0441\u044f \u0442\u0440\u0435\u0442\u044c\u0438\u043c \u043b\u0438\u0446\u0430\u043c, \u0430 \u043c\u043e\u0436\u0435\u0442 \u0438 \u0432\u043e\u0432\u0441\u0435 \u043f\u0440\u043e\u0434\u0430\u0432\u0430\u0442\u044c\u0441\u044f \u043d\u0430 \u043d\u0435\u043b\u0435\u0433\u0430\u043b\u044c\u043d\u044b\u0445 \u0440\u0435\u0441\u0443\u0440\u0441\u0430\u0445 \u0438\u043b\u0438 \u043f\u0440\u043e\u0441\u0442\u043e \u0440\u0435\u043a\u043b\u0430\u043c\u043d\u044b\u043c \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u044f\u043c.",
-      "\u041c\u044b, \u043d\u0430\u0441\u043a\u043e\u043b\u044c\u043a\u043e \u043c\u043e\u0436\u0435\u043c, \u043f\u044b\u0442\u0430\u0435\u043c\u0441\u044f \u0412\u0430\u0441 \u0437\u0430\u0449\u0438\u0442\u0438\u0442\u044c \u043e\u0442 \u044d\u0442\u043e\u0433\u043e.",
-      "\u0414\u043b\u044f \u044d\u0442\u043e\u0433\u043e \u043c\u044b \u0441\u043e\u0437\u0434\u0430\u043b\u0438 \u044d\u0442\u043e \u043d\u0435\u0431\u043e\u043b\u044c\u0448\u043e\u0435 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043d\u0438\u0435 \u0434\u043b\u044f \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u0430.",
-    ],
-    en: [
-      "Many websites collect too much information \u2014 including information they do not need. This has already become a habit for many organizations and companies.",
-      "The information they collect may simply be stored by these organizations, shared with third parties, or even sold on illegal resources or to advertising companies.",
-      "We try, as much as we can, to protect you from this.",
-      "That is why we created this small browser extension.",
-    ],
-    uk: [
-      "\u0411\u0430\u0433\u0430\u0442\u043e \u0441\u0430\u0439\u0442\u0456\u0432 \u0437\u0431\u0438\u0440\u0430\u044e\u0442\u044c \u0437\u0430\u043d\u0430\u0434\u0442\u043e \u0431\u0430\u0433\u0430\u0442\u043e \u0456\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0456\u0457. \u0417\u043e\u043a\u0440\u0435\u043c\u0430 \u0442\u0443 \u0456\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0456\u044e, \u044f\u043a\u0430 \u0457\u043c \u043d\u0435 \u043f\u043e\u0442\u0440\u0456\u0431\u043d\u0430. \u0426\u0435 \u0432\u0436\u0435 \u0443\u0432\u0456\u0439\u0448\u043b\u043e \u0443 \u0437\u0432\u0438\u0447\u043a\u0443 \u0431\u0430\u0433\u0430\u0442\u044c\u043e\u0445 \u043e\u0440\u0433\u0430\u043d\u0456\u0437\u0430\u0446\u0456\u0439 \u0456 \u043a\u043e\u043c\u043f\u0430\u043d\u0456\u0439.",
-      "\u0406\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0456\u044f, \u044f\u043a\u0443 \u0432\u043e\u043d\u0438 \u0437\u0431\u0438\u0440\u0430\u044e\u0442\u044c, \u043c\u043e\u0436\u0435 \u043f\u0440\u043e\u0441\u0442\u043e \u0437\u0431\u0435\u0440\u0456\u0433\u0430\u0442\u0438\u0441\u044f \u0443 \u0446\u0438\u0445 \u043e\u0440\u0433\u0430\u043d\u0456\u0437\u0430\u0446\u0456\u0439, \u043c\u043e\u0436\u0435 \u043f\u0435\u0440\u0435\u0434\u0430\u0432\u0430\u0442\u0438\u0441\u044f \u0442\u0440\u0435\u0442\u0456\u043c \u043e\u0441\u043e\u0431\u0430\u043c, \u0430 \u043c\u043e\u0436\u0435 \u0439 \u0432\u0437\u0430\u0433\u0430\u043b\u0456 \u043f\u0440\u043e\u0434\u0430\u0432\u0430\u0442\u0438\u0441\u044f \u043d\u0430 \u043d\u0435\u043b\u0435\u0433\u0430\u043b\u044c\u043d\u0438\u0445 \u0440\u0435\u0441\u0443\u0440\u0441\u0430\u0445 \u0430\u0431\u043e \u043f\u0440\u043e\u0441\u0442\u043e \u0440\u0435\u043a\u043b\u0430\u043c\u043d\u0438\u043c \u043a\u043e\u043c\u043f\u0430\u043d\u0456\u044f\u043c.",
-      "\u041c\u0438, \u043d\u0430\u0441\u043a\u0456\u043b\u044c\u043a\u0438 \u043c\u043e\u0436\u0435\u043c\u043e, \u043d\u0430\u043c\u0430\u0433\u0430\u0454\u043c\u043e\u0441\u044f \u0437\u0430\u0445\u0438\u0441\u0442\u0438\u0442\u0438 \u0412\u0430\u0441 \u0432\u0456\u0434 \u0446\u044c\u043e\u0433\u043e.",
-      "\u0414\u043b\u044f \u0446\u044c\u043e\u0433\u043e \u043c\u0438 \u0441\u0442\u0432\u043e\u0440\u0438\u043b\u0438 \u0446\u0435 \u043d\u0435\u0432\u0435\u043b\u0438\u043a\u0435 \u0440\u043e\u0437\u0448\u0438\u0440\u0435\u043d\u043d\u044f \u0434\u043b\u044f \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u0430.",
-    ],
-  };
-
-  function renderPrinciples(lang) {
-    const paragraphs = PRINCIPLES[lang] || PRINCIPLES.ru;
-    textEl.replaceChildren();
-    paragraphs.forEach((line) => {
-      const p = document.createElement("p");
-      p.textContent = line;
-      textEl.appendChild(p);
-    });
-    textEl.setAttribute("lang", lang);
-  }
-
-  langButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const lang = btn.getAttribute("data-lang") || "ru";
-      langButtons.forEach((b) => {
-        const active = b === btn;
-        b.classList.toggle("active", active);
-        b.setAttribute("aria-selected", active ? "true" : "false");
-      });
-      renderPrinciples(lang);
-    });
-  });
-
-  renderPrinciples("ru");
 })();
 

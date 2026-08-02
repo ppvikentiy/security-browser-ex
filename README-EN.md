@@ -12,7 +12,13 @@ Chromium extension (Manifest V3): focus/visibility hardening, anti-fingerprintin
 
 **Version:** see `"version"` in [`manifest.json`](./manifest.json).
 
-> **What's new in 2.5.0** — fixed a critical settings-delivery bug in the page MAIN world (seen on vk.ru and similar sites): a script path listed in several `content_scripts` entries was injected into a document only once — the isolated entry consumed the single injection, so MAIN modules never received the signed HMAC channel. Threat Shield stayed silent, Device Security remained fail-closed and blocked IndexedDB, and MAIN-side stats were not counted. Added separate byte-identical copies for the MAIN world — `fb-channel-main.js` and `security-defaults-main.js`; all MAIN scripts are now in a single manifest entry. To verify the copies stay in sync: `node tools/check-world-copies.mjs [--fix]`. See [Internal channel security](#internal-channel-security-hmac).
+> **What's new in 2.7.0**
+>
+> * **Multilingual UI** — Russian, English, and Ukrainian. The language is chosen under Accessibility (`optionsUiLanguage`) and applies immediately to the options page, toolbar popup, and Threat Shield banner. String catalog: [`src/i18n.js`](./src/i18n.js) (regenerate with `node tools/gen-i18n.mjs`); UI markup uses `data-i18n*` attributes.
+> * **Icon** — updated lock mark and PNG assets under [`assets/`](./assets/).
+> * **Tab pause** — pause state now reaches content scripts reliably: fixed `chrome.storage.session.onChanged` listener shape, plus an explicit `FB_REFRESH_SETTINGS` message after pause/unpause (and when pause clears on URL change). Modules could previously keep running after “Temporarily disable on this tab”.
+> * **Copy helper** — respects the global master switch and per-tab pause (highlight used to stay active).
+> * **Options page** — pending edits are no longer dropped when a storage write is already in flight (queued re-flush).
 
 Source: [https://github.com/ppvikentiy/security-browser-ex](https://github.com/ppvikentiy/security-browser-ex)
 
@@ -38,7 +44,7 @@ License: [MIT](./LICENSE)
 * **Threat Shield** — top-frame overlay banner when heuristics match: plain HTTP on public hosts (excluding local/private detection), builtin + custom suspicious host patterns, “stacked TLD” look-alikes using configurable suffix tails, optional long/garbage-looking FQDN heuristic, chains of HTTP redirects before the document loads; whitelist and extra patterns in settings. In the RU options UI this panel is labeled **«Активная интернет защита»**. Banner copy lives in [`src/threat-shield.js`](src/threat-shield.js) (upstream strings are largely Russian).
 * **ADS Block** — popups/adjacent nuisance blocking without user gesture, cosmetic CSS (via `chrome.scripting` for strict CSP), telemetry domain blocking via DNR; custom lists. Implemented in [`src/ds-block.js`](src/ds-block.js); internal message keys still use the `DS_BLOCK` prefix.
 * **Copy helper** — unlock common copy blocks; highlight + shortcuts (see the **«Copy assistant» / «Помощник при копировании»** section—wording follows UI locale).
-* **Accessibility** — reduced motion / calmer UI controls on the options page
+* **Accessibility** — UI language (ru / en / uk), reduced motion, and calmer UI controls on the options page
 * **Excluded domains** — host patterns (`*.example.com` style); affects modules and some DNR rules; profile-wide `chrome.privacy` toggles do not automatically follow per-site exclusions
 * **Statistics** — per top-level host counters including an **ADS** bucket (telemetry/cosmetics module); with `declarativeNetRequestFeedback`, DNR matches feed the badge/table
 
@@ -96,7 +102,8 @@ Also: tab pause map `focusBlockerPausedTabIds`, ADS cosmetic CSS per tab, stats 
 |--------|------|---------|
 | `FB_STATS_REPORT` | `stats-bridge.js` | `deltas`, `breakdown`, `topHost` |
 | `FB_DS_BLOCK_SET_COSMETIC_CSS` | `settings-bridge.js` | Enable/disable injected hide CSS for the tab |
-| `FB_IS_TAB_PAUSED` | `settings-bridge.js` | Pause flag for current tab |
+| `FB_IS_TAB_PAUSED` | `settings-bridge.js`, `copy-helper.js` | Pause flag for current tab |
+| `FB_REFRESH_SETTINGS` | `background.js` → tab | Re-read storage/pause and rebroadcast settings to MAIN (`settings-bridge.js`, `copy-helper.js`) |
 | `FB_POPUP_GET_STATE` | `popup.js` | Host, flags, exclusions, injectable, paused |
 | `FB_POPUP_SET_TAB_PAUSE` | `popup.js` | Toggle pause |
 | `FB_POPUP_SET_STORAGE_BOOL` | `popup.js` | Master switch and feature toggles (`extensionGloballyEnabled`, focus/security/network, etc.) |

@@ -3,8 +3,29 @@
 
   /** Depends on security-defaults-main.js (MAIN copy), loaded before this script. */
 
-  const BANNER_TEXT = "Возможна угроза вашим данным. Будьте осторожны!";
   const BANNER_HOST = "__focus_blocker_threat_banner_v1";
+  const BANNER_I18N = {
+    ru: {
+      text: "Возможна угроза вашим данным. Будьте осторожны!",
+      close: "Закрыть",
+      session: "Не показывать на этом сайте (сессия)",
+    },
+    en: {
+      text: "Your data may be at risk. Be careful!",
+      close: "Close",
+      session: "Don’t show on this site (session)",
+    },
+    uk: {
+      text: "Можлива загроза вашим даним. Будьте обережні!",
+      close: "Закрити",
+      session: "Не показувати на цьому сайті (сесія)",
+    },
+  };
+
+  function bannerStrings(lang) {
+    const key = lang === "en" || lang === "uk" ? lang : "ru";
+    return BANNER_I18N[key] || BANNER_I18N.ru;
+  }
 
   /** @typedef {{ threatShieldEnabled: boolean, threatWarnHttp: boolean, threatWarnList: boolean, threatWarnStackedTld: boolean, threatWarnGarbageHost: boolean, threatWarnRedirect: boolean, threatGarbageMinLabels: number, threatShieldExtraHosts: string[], threatShieldWhitelistHosts: string[] }} ThreatMerged */
 
@@ -82,6 +103,7 @@
   const state = {
     isActive: false,
     pageAllowed: true,
+    optionsUiLanguage: "ru",
     /** @type {ThreatMerged} */
     merged: fbMergeThreatShield({}),
     /** @type {string[]} */
@@ -296,16 +318,18 @@
         '\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif;font-size:14px;padding:12px 14px;box-shadow:0 2px 10px rgba(0,0,0,0.25);' +
         "display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;direction:ltr;";
 
+      const i18n = bannerStrings(state.optionsUiLanguage);
+
       const text = document.createElement("span");
       text.style.cssText = "flex:1;min-width:200px;margin:0;";
-      text.textContent = BANNER_TEXT;
+      text.textContent = i18n.text;
 
       const actions = document.createElement("span");
       actions.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;align-items:center;";
 
       const btnClose = document.createElement("button");
       btnClose.type = "button";
-      btnClose.textContent = "Закрыть";
+      btnClose.textContent = i18n.close;
       btnClose.style.cssText =
         "background:#fff;color:#991b1b;border:none;border-radius:6px;padding:6px 12px;font-weight:600;cursor:pointer;font:inherit;";
       btnClose.addEventListener("click", () => {
@@ -320,7 +344,7 @@
 
       const btnSession = document.createElement("button");
       btnSession.type = "button";
-      btnSession.textContent = "Не показывать на этом сайте (сессия)";
+      btnSession.textContent = i18n.session;
       btnSession.style.cssText =
         "background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.85);border-radius:6px;padding:6px 10px;cursor:pointer;font:inherit;";
       btnSession.addEventListener("click", () => dismissForSession(host));
@@ -360,6 +384,8 @@
       payload && typeof payload === "object" ? /** @type {Record<string, unknown>}*/ (payload) : {};
     state.isActive = !!p.isActive;
     state.pageAllowed = p.pageAllowed !== false;
+    const langRaw = p.optionsUiLanguage;
+    state.optionsUiLanguage = langRaw === "en" || langRaw === "uk" || langRaw === "ru" ? langRaw : "ru";
     const ts =
       /** @type {Record<string, unknown> | undefined}*/ (p.threatShield && typeof p.threatShield === "object")
         ? p.threatShield

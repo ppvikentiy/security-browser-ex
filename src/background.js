@@ -834,6 +834,16 @@ function writePausedTabMap(map, cb) {
   }
 }
 
+/** Ask the tab's isolated-world bridge to re-read pause/settings and rebroadcast to MAIN. */
+function notifyTabSettingsRefresh(tabId) {
+  if (tabId == null) return;
+  try {
+    chrome.tabs.sendMessage(tabId, { type: "FB_REFRESH_SETTINGS" }, () => {
+      void chrome.runtime.lastError;
+    });
+  } catch (_e) {}
+}
+
 /** In-memory fallback for forks without chrome.storage.session. */
 let dsCosmeticMapFallback = {};
 
@@ -1254,7 +1264,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     const next = { ...map };
     delete next[String(tabId)];
     delete next[tabId];
-    writePausedTabMap(next);
+    writePausedTabMap(next, () => notifyTabSettingsRefresh(tabId));
   });
 });
 
@@ -1375,6 +1385,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           "extensionGloballyEnabled",
           "focusBlockingEnabled",
           "optionsReduceAnimations",
+          "optionsUiLanguage",
           ...SECURITY_STORAGE_KEYS,
           ...NETWORK_STORAGE_KEYS,
         ];
@@ -1385,6 +1396,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             Array.isArray(result.excludedDomains) ? result.excludedDomains : []
           );
           const alreadyExcluded = !!(hostname && excludedList.some((p) => patternMatchesHost(p, hostname)));
+          const langRaw = result && result.optionsUiLanguage;
+          const lang =
+            langRaw === "en" || langRaw === "uk" || langRaw === "ru" ? langRaw : "ru";
           sendResponse({
             tabUrl,
             hostname,
@@ -1394,6 +1408,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             extensionGloballyEnabled: result.extensionGloballyEnabled !== false,
             focusBlockingEnabled: result.focusBlockingEnabled !== false,
             optionsReduceAnimations: !!result.optionsReduceAnimations,
+            optionsUiLanguage: lang,
             securityEnabled: !!mergeSecurityFromStorage(result || {}).securityEnabled,
             networkSecurityEnabled: !!mergeNetworkFromStorage(result || {}).networkSecurityEnabled,
             alreadyExcluded,
@@ -1418,7 +1433,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           delete next[String(tabId)];
           delete next[tabId];
         }
-        writePausedTabMap(next, () => sendResponse({ ok: true }));
+        writePausedTabMap(next, () => {
+          notifyTabSettingsRefresh(tabId);
+          sendResponse({ ok: true });
+        });
       });
     });
     return true;
@@ -1451,9 +1469,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       storage.set({ excludedDomains: list }, () => {
         const err = chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError : null;
         if (!err) {
-          try {
-            refreshStorageAndBroadcastFast();
-          } catch (_e) {}
+          // Bridge picks this up via chrome.storage.onChanged; no SW-side refresh helper exists.
           onDone({ ok: true, added: true });
           return;
         }
@@ -1464,9 +1480,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             localStorage.set({ excludedDomains: list }, () => {
               const err2 = chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError : null;
               if (!err2) {
-                try {
-                  refreshStorageAndBroadcastFast();
-                } catch (_e2) {}
                 onDone({ ok: true, added: true, fallback: "local" });
                 return;
               }
