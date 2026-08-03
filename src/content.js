@@ -341,17 +341,21 @@
     return null;
   }
   let fbChannelApi = fbResolveChannelApi();
-  let fbChannelKey = "";
-  try {
-    fbChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
-  } catch (_e) {
-    fbChannelKey = "";
+  function fbReadChannelKey() {
+    try {
+      return (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
+    } catch (_e) {
+      return "";
+    }
   }
+  // Lazy: re-read on verify if empty — MAIN may load before the isolated bridge sets data-fb-k.
+  let fbChannelKey = fbReadChannelKey();
   let fbLastSeq = 0;
 
   // Authentic payload = valid HMAC-SHA256 signature + strictly increasing seq (anti-replay).
   function fbVerifyPayload(payload) {
     if (!fbChannelApi) fbChannelApi = fbResolveChannelApi();
+    if (!fbChannelKey) fbChannelKey = fbReadChannelKey();
     if (!fbChannelApi || !fbChannelKey || !payload || typeof payload !== "object") return false;
     const seq = payload.seq;
     if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= fbLastSeq) return false;

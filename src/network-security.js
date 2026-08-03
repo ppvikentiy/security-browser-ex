@@ -22,17 +22,21 @@
     return null;
   }
   let fbNetChannelApi = fbResolveNetChannelApi();
-  let fbNetChannelKey = "";
-  try {
-    fbNetChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
-  } catch (_e) {
-    fbNetChannelKey = "";
+  function fbReadNetChannelKey() {
+    try {
+      return (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
+    } catch (_e) {
+      return "";
+    }
   }
+  // Lazy: re-read on verify if empty — MAIN may load before the isolated bridge sets data-fb-k.
+  let fbNetChannelKey = fbReadNetChannelKey();
   let fbNetLastSeq = 0;
 
   // Authentic payload = valid HMAC-SHA256 signature + strictly increasing seq (anti-replay).
   function fbNetVerifyPayload(payload) {
     if (!fbNetChannelApi) fbNetChannelApi = fbResolveNetChannelApi();
+    if (!fbNetChannelKey) fbNetChannelKey = fbReadNetChannelKey();
     if (!fbNetChannelApi || !fbNetChannelKey || !payload || typeof payload !== "object") return false;
     const seq = payload.seq;
     if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= fbNetLastSeq) return false;
@@ -400,19 +404,28 @@
     state.merged = fbMergeNetworkFromStorage((p.network && typeof p.network === "object") ? p.network : {});
   }
 
-  window.addEventListener("message", (event) => {
-    if (event.source !== window || !event.data || event.data.type !== "FOCUS_BLOCKER_NETWORK_SETTINGS") return;
-    if (!fbNetVerifyPayload(event.data)) return;
-    applyPayload(event.data);
-  });
+  // Capture phase: registered at document_start, before page scripts can stopPropagation.
+  window.addEventListener(
+    "message",
+    (event) => {
+      if (event.source !== window || !event.data || event.data.type !== "FOCUS_BLOCKER_NETWORK_SETTINGS") return;
+      if (!fbNetVerifyPayload(event.data)) return;
+      applyPayload(event.data);
+    },
+    true
+  );
 
-  window.addEventListener("FOCUS_BLOCKER_NETWORK_SETTINGS_EVENT", (/** @type {CustomEvent} */ event) => {
-    try {
-      const detail = event && event.detail ? event.detail : {};
-      if (!fbNetVerifyPayload(detail)) return;
-      applyPayload(detail);
-    } catch (_e) {}
-  });
+  window.addEventListener(
+    "FOCUS_BLOCKER_NETWORK_SETTINGS_EVENT",
+    (/** @type {CustomEvent} */ event) => {
+      try {
+        const detail = event && event.detail ? event.detail : {};
+        if (!fbNetVerifyPayload(detail)) return;
+        applyPayload(detail);
+      } catch (_e) {}
+    },
+    true
+  );
 
   try {
     window.postMessage({ type: "FOCUS_BLOCKER_REQUEST_SETTINGS" }, "*");

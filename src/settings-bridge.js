@@ -215,6 +215,7 @@ const FB_CHANNEL_KEY = FB_CHANNEL ? FB_CHANNEL.randomHexKey(32) : "";
 let fbChannelSeq = 0;
 
 let fbChannelKeyAttrRemoved = false;
+let fbChannelKeyRemoveTimer = 0;
 function fbSetChannelKeyAttr() {
   try {
     if (FB_CHANNEL_KEY && typeof document !== "undefined" && document.documentElement) {
@@ -226,11 +227,36 @@ function fbSetChannelKeyAttr() {
 function fbRemoveChannelKeyAttrOnce() {
   if (fbChannelKeyAttrRemoved) return;
   fbChannelKeyAttrRemoved = true;
+  if (fbChannelKeyRemoveTimer) {
+    try {
+      clearTimeout(fbChannelKeyRemoveTimer);
+    } catch (_e) {}
+    fbChannelKeyRemoveTimer = 0;
+  }
   try {
     if (typeof document !== "undefined" && document.documentElement) {
       document.documentElement.removeAttribute("data-fb-k");
     }
   } catch (_e) {}
+}
+
+/**
+ * Keep data-fb-k until Focus ACK (or a safety timeout). MAIN modules that miss the
+ * sync document_start read — e.g. Chromium forks that inject MAIN before isolated —
+ * can still capture the key on the first signed broadcast. Removing immediately after
+ * the first async storage.get left those modules with a permanent empty key.
+ */
+function fbScheduleChannelKeyRemoval(ms) {
+  if (fbChannelKeyAttrRemoved) return;
+  if (fbChannelKeyRemoveTimer) {
+    try {
+      clearTimeout(fbChannelKeyRemoveTimer);
+    } catch (_e) {}
+  }
+  fbChannelKeyRemoveTimer = setTimeout(() => {
+    fbChannelKeyRemoveTimer = 0;
+    fbRemoveChannelKeyAttrOnce();
+  }, ms);
 }
 
 /**
@@ -251,11 +277,14 @@ function fbSignPayload(payload) {
   return payload;
 }
 
-// Expose key early; cleanup happens after the first broadcast (see broadcastAll),
-// which is guaranteed to run after all document_start MAIN modules have read it.
+// Expose key early. Cleanup is ACK-driven (or a 5s safety timeout) — see
+// broadcastAll / fbMarkAcked. Do not assume MAIN always loads after isolated.
 fbSetChannelKeyAttr();
+fbScheduleChannelKeyRemoval(5000);
 
 let tabPaused = false;
+/** Set true when Focus MAIN acks a signed settings payload (see fbMarkAcked). */
+let fbFocusAcked = false;
 
 function isExcluded(excludedDomains) {
   const currentHost = window.location.hostname;
@@ -298,7 +327,9 @@ function postFocusSettings(blockedEvents, isEnabled) {
   };
   fbSignPayload(payload);
 
-  window.postMessage(payload, location.origin || "*");
+  // Always "*": same-window delivery; HMAC authenticates. location.origin silently
+  // drops the message on opaque origins (sandboxed iframes, some about:blank, file://).
+  window.postMessage(payload, "*");
   try {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_SETTINGS_EVENT", { detail: payload }));
   } catch (e) {}
@@ -340,7 +371,7 @@ function postSecuritySettings(result, pageAllowsModules, excludedDomains) {
   };
   fbSignPayload(payload);
 
-  window.postMessage(payload, location.origin || "*");
+  window.postMessage(payload, "*");
   try {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_SECURITY_SETTINGS_EVENT", { detail: payload }));
   } catch (e) {}
@@ -364,7 +395,7 @@ function postNetworkSettings(result, pageAllowsModules, excludedDomains) {
   };
   fbSignPayload(payload);
 
-  window.postMessage(payload, location.origin || "*");
+  window.postMessage(payload, "*");
   try {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_NETWORK_SETTINGS_EVENT", { detail: payload }));
   } catch (e) {}
@@ -388,7 +419,7 @@ function postDsBlockSettings(result, pageAllowsModules) {
   };
   fbSignPayload(payload);
 
-  window.postMessage(payload, location.origin || "*");
+  window.postMessage(payload, "*");
   try {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_DS_BLOCK_SETTINGS_EVENT", { detail: payload }));
   } catch (e) {}
@@ -462,7 +493,7 @@ function postThreatShieldSettings(result, pageAllowsModules) {
   };
   fbSignPayload(payload);
 
-  window.postMessage(payload, location.origin || "*");
+  window.postMessage(payload, "*");
   try {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_THREAT_SHIELD_SETTINGS_EVENT", { detail: payload }));
   } catch (_e) {}
@@ -486,7 +517,7 @@ function postDeviceSecuritySettings(result, pageAllowsModules) {
   };
   fbSignPayload(payload);
 
-  window.postMessage(payload, location.origin || "*");
+  window.postMessage(payload, "*");
   try {
     window.dispatchEvent(new CustomEvent("FOCUS_BLOCKER_DEVICE_SECURITY_SETTINGS_EVENT", { detail: payload }));
   } catch (e) {}
@@ -508,6 +539,12 @@ function broadcastAll(result) {
   const excluded = isExcluded(excludedDomains);
   const siteAllows = globalOn && !excluded && !tabPaused;
 
+  // Re-publish before each pre-ACK broadcast so MAIN verifiers can lazy-capture
+  // if they raced ahead of the isolated bridge at document_start.
+  if (!fbFocusAcked && !fbChannelKeyAttrRemoved) {
+    fbSetChannelKeyAttr();
+  }
+
   postFocusSettings(blockedEvents, siteAllows && focusModuleOn);
   postSecuritySettings(result, siteAllows, excludedDomains);
   postNetworkSettings(result, siteAllows, excludedDomains);
@@ -515,9 +552,13 @@ function broadcastAll(result) {
   postThreatShieldSettings(result, siteAllows);
   postDeviceSecuritySettings(result, siteAllows);
 
-  // Remove the key attribute once the first broadcast is sent to minimize exposure.
-  // All document_start MAIN modules have read the key synchronously long before this.
-  queueMicrotask(fbRemoveChannelKeyAttrOnce);
+  // Prefer ACK-driven removal; fall back to a short timeout so the attr does not
+  // linger if Focus never acks (e.g. excluded host / focus module off).
+  if (!fbFocusAcked) {
+    fbScheduleChannelKeyRemoval(5000);
+  } else {
+    queueMicrotask(fbRemoveChannelKeyAttrOnce);
+  }
 }
 
 const ALL_KEYS = [
@@ -583,7 +624,6 @@ function refreshStorageAndBroadcastFast() {
   }
 }
 
-let fbFocusAcked = false;
 let fbBurstTimers = [];
 let fbLastRequestTs = 0;
 
@@ -593,6 +633,9 @@ function fbMarkAcked() {
     fbBurstTimers.forEach((t) => clearTimeout(t));
     fbBurstTimers = [];
   }
+  // Focus verified a signed payload → every MAIN module that shares this document
+  // had a chance to read data-fb-k; drop it now.
+  queueMicrotask(fbRemoveChannelKeyAttrOnce);
 }
 
 function fbScheduleBurstRebroadcast() {

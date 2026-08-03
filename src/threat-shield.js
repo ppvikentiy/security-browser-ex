@@ -417,12 +417,15 @@
     return null;
   }
   let fbChannelApi = fbResolveChannelApi();
-  let fbChannelKey = "";
-  try {
-    fbChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
-  } catch (_e) {
-    fbChannelKey = "";
+  function fbReadChannelKey() {
+    try {
+      return (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
+    } catch (_e) {
+      return "";
+    }
   }
+  // Lazy: re-read on verify if empty — MAIN may load before the isolated bridge sets data-fb-k.
+  let fbChannelKey = fbReadChannelKey();
   let fbLastSeq = 0;
 
   // A silently dropped control message leaves the module stuck at its startup
@@ -460,8 +463,9 @@
       fbWarnVerifyOnce("channel api unavailable (fb-channel-main.js exports not visible):" + probe);
       return false;
     }
+    if (!fbChannelKey) fbChannelKey = fbReadChannelKey();
     if (!fbChannelKey) {
-      fbWarnVerifyOnce("channel key unavailable (data-fb-k missing at document_start)");
+      fbWarnVerifyOnce("channel key unavailable (data-fb-k missing)");
       return false;
     }
     const seq = payload.seq;
@@ -485,11 +489,16 @@
     return true;
   }
 
-  window.addEventListener("message", (event) => {
-    if (event.source !== window || !event.data || event.data.type !== "FOCUS_BLOCKER_THREAT_SHIELD_SETTINGS") return;
-    if (!fbVerifyPayload(event.data)) return;
-    applyPayload(event.data);
-  });
+  // Capture phase: registered at document_start, before page scripts can stopPropagation.
+  window.addEventListener(
+    "message",
+    (event) => {
+      if (event.source !== window || !event.data || event.data.type !== "FOCUS_BLOCKER_THREAT_SHIELD_SETTINGS") return;
+      if (!fbVerifyPayload(event.data)) return;
+      applyPayload(event.data);
+    },
+    true
+  );
 
   window.addEventListener(
     "FOCUS_BLOCKER_THREAT_SHIELD_SETTINGS_EVENT",
@@ -500,7 +509,7 @@
         applyPayload(detail);
       } catch (_e2) {}
     },
-    false
+    true
   );
 
   /** Первый прогон (кэш + позднее обновление с моста) */

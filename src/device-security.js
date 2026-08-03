@@ -81,6 +81,47 @@
     return out;
   }
 
+  /**
+   * Install a method shim as an accessor with a no-op setter.
+   * Data properties with writable:false (via lockdown) throw TypeError when the
+   * page does `MediaDevices.prototype.getUserMedia = …` — common in vendor
+   * bundles. Silent ignore keeps our shim and avoids crashing the page.
+   */
+  function defineShimMethod(target, name, shimFn, assignStatKey) {
+    defineProp(
+      target,
+      name,
+      maybeLockdownDesc({
+        configurable: true,
+        enumerable: true,
+        get: () => shimFn,
+        set: () => {
+          bumpDeviceThrottled(`assign:${name}`, 500, assignStatKey || `assign_${name}_ignored`);
+        },
+      })
+    );
+  }
+
+  /**
+   * Install a read-only-looking getter with a no-op setter.
+   * Getter-only + lockdown (configurable:false) throws in strict mode on
+   * `navigator.mediaDevices = …` / `window.localStorage = …`.
+   */
+  function defineGuardedGetter(target, name, getter, enumerable, assignStatKey) {
+    defineProp(
+      target,
+      name,
+      maybeLockdownDesc({
+        configurable: true,
+        enumerable: enumerable !== false,
+        get: getter,
+        set: () => {
+          bumpDeviceThrottled(`assign:${name}`, 500, assignStatKey || `assign_${name}_ignored`);
+        },
+      })
+    );
+  }
+
   function makeSecurityError(msg) {
     try {
       return new DOMException(msg, "SecurityError");
@@ -101,6 +142,34 @@
       err.name = "NotFoundError";
       return err;
     }
+  }
+
+  /** Same name/shape browsers use when the user (or policy) denies cam/mic. */
+  function makeNotAllowedError(msg) {
+    try {
+      return new DOMException(msg || "Permission denied", "NotAllowedError");
+    } catch (_e) {
+      const err = new Error(msg || "Permission denied");
+      // @ts-ignore
+      err.name = "NotAllowedError";
+      return err;
+    }
+  }
+
+  /** permissions.query() resolves with this shape when access is denied — sites expect resolve, not reject. */
+  function makeDeniedPermissionStatus(name) {
+    /** @type {any} */
+    const status = {
+      state: "denied",
+      name: typeof name === "string" ? name : "",
+      onchange: null,
+      addEventListener: function () {},
+      removeEventListener: function () {},
+      dispatchEvent: function () {
+        return false;
+      },
+    };
+    return status;
   }
 
   function isIllegalInvocationError(err) {
@@ -223,7 +292,7 @@
           }
           return nativeGet ? nativeGet.call(window) : undefined;
         };
-        defineProp(Window.prototype, prop, maybeLockdownDesc({ configurable: true, enumerable: od.enumerable !== false, get: getter }));
+        defineGuardedGetter(Window.prototype, prop, getter, od.enumerable !== false, `window_assign_${prop}_ignored`);
       } catch (_e) {}
     }
 
@@ -235,6 +304,41 @@
   (function patchIndexedDb() {
     if (typeof indexedDB === "undefined" || !indexedDB) return;
 
+    function makeBlockedIdbRequest() {
+      const err = makeSecurityError("[Focus Blocker Device Security] IndexedDB disabled");
+      /** @type {any} */
+      const req = {
+        result: undefined,
+        error: err,
+        readyState: "done",
+        source: null,
+        transaction: null,
+        onsuccess: null,
+        onerror: null,
+        onblocked: null,
+        onupgradeneeded: null,
+        addEventListener: function (type, listener) {
+          if (type === "error" && typeof listener === "function") {
+            queueMicrotask(() => {
+              try {
+                listener.call(req, { type: "error", target: req });
+              } catch (_e) {}
+            });
+          }
+        },
+        removeEventListener: function () {},
+        dispatchEvent: function () {
+          return false;
+        },
+      };
+      queueMicrotask(() => {
+        try {
+          if (typeof req.onerror === "function") req.onerror({ type: "error", target: req });
+        } catch (_e) {}
+      });
+      return req;
+    }
+
     function patchIdbFactoryMethod(name) {
       try {
         const proto = Object.getPrototypeOf(indexedDB);
@@ -245,11 +349,13 @@
         const shim = function () {
           if (enabled("deviceSecurityBlockIndexedDb")) {
             bumpDevice(1, "indexedDB_factory_blocked");
-            throw makeSecurityError("[Focus Blocker Device Security] IndexedDB disabled");
+            // Async request error instead of sync throw — avoids uncaught
+            // SecurityError in frameworks that wrap open() in promises poorly.
+            return makeBlockedIdbRequest();
           }
           return native.apply(this, arguments);
         };
-        defineProp(tgt, name, maybeLockdownDesc({ configurable: true, writable: true, value: shim }));
+        defineShimMethod(tgt, name, shim, `indexedDB_assign_${name}_ignored`);
       } catch (_e) {}
     }
 
@@ -268,7 +374,7 @@
           }
           return nativeGet.call(window);
         };
-        defineProp(Window.prototype, "indexedDB", maybeLockdownDesc({ configurable: true, enumerable: od.enumerable !== false, get: getter }));
+        defineGuardedGetter(Window.prototype, "indexedDB", getter, od.enumerable !== false, "window_assign_indexedDB_ignored");
       }
     } catch (_e2) {}
   })();
@@ -289,7 +395,7 @@
           }
           return native.apply(this, arguments);
         };
-        defineProp(proto, name, maybeLockdownDesc({ configurable: true, writable: true, value: shim }));
+        defineShimMethod(proto, name, shim, `CacheStorage_assign_${name}_ignored`);
       } catch (_e) {}
     }
 
@@ -307,84 +413,145 @@
           }
           return nativeGet.call(window);
         };
-        defineProp(Window.prototype, "caches", maybeLockdownDesc({ configurable: true, enumerable: od.enumerable !== false, get: getter }));
+        defineGuardedGetter(Window.prototype, "caches", getter, od.enumerable !== false, "window_assign_caches_ignored");
       }
     } catch (_e2) {}
   })();
 
   /* ---------------- Camera/Microphone (mediaDevices) ---------------- */
   (function patchMediaDevices() {
-    // Hide navigator.mediaDevices as undefined where possible.
+    // Hide camera/microphone only. Speakers (kind === "audiooutput") must stay
+    // visible — emptying enumerateDevices broke site audio-device pickers.
+
+    /** @type {WeakSet<object>} */
+    const instancePatched = typeof WeakSet !== "undefined" ? new WeakSet() : null;
+
+    const nativeEnumerate =
+      typeof MediaDevices !== "undefined" && MediaDevices.prototype && typeof MediaDevices.prototype.enumerateDevices === "function"
+        ? MediaDevices.prototype.enumerateDevices
+        : null;
+    const nativeGum =
+      typeof MediaDevices !== "undefined" && MediaDevices.prototype && typeof MediaDevices.prototype.getUserMedia === "function"
+        ? MediaDevices.prototype.getUserMedia
+        : null;
+    const nativeGdm =
+      typeof MediaDevices !== "undefined" && MediaDevices.prototype && typeof MediaDevices.prototype.getDisplayMedia === "function"
+        ? MediaDevices.prototype.getDisplayMedia
+        : null;
+
+    function isCaptureDeviceKind(kind) {
+      const k = typeof kind === "string" ? kind.toLowerCase() : "";
+      return k === "audioinput" || k === "videoinput";
+    }
+
+    function filterOutCaptureDevices(list) {
+      const arr = Array.isArray(list) ? list : [];
+      return arr.filter((d) => !isCaptureDeviceKind(d && d.kind));
+    }
+
+    function callNativeMedia(nativeFn, selfArg, args, onFail) {
+      const ctx = getMediaDevicesContext(selfArg);
+      if (!ctx || typeof nativeFn !== "function") return onFail();
+      try {
+        return nativeFn.apply(ctx, args);
+      } catch (e) {
+        if (isIllegalInvocationError(e)) {
+          return onFail();
+        }
+        throw e;
+      }
+    }
+
+    const shimEnumerate =
+      typeof nativeEnumerate === "function"
+        ? function enumerateDevicesShim() {
+            const args = arguments;
+            const selfArg = this;
+            if (!enabled("deviceSecurityHideMediaDevices")) {
+              return callNativeMedia(nativeEnumerate, selfArg, args, () => Promise.resolve([]));
+            }
+            // Keep audiooutput (speakers); drop microphone/camera entries only.
+            return Promise.resolve(callNativeMedia(nativeEnumerate, selfArg, args, () => Promise.resolve([])))
+              .then((list) => {
+                bumpDeviceThrottled("mediaEnum", 300, "mediaDevices_enumerateDevices_filtered");
+                return filterOutCaptureDevices(list);
+              })
+              .catch(() => {
+                bumpDeviceThrottled("mediaEnum", 300, "mediaDevices_enumerateDevices_filtered");
+                return [];
+              });
+          }
+        : null;
+
+    const shimGum =
+      typeof nativeGum === "function"
+        ? function getUserMediaShim() {
+            if (enabled("deviceSecurityHideMediaDevices")) {
+              bumpDevice(1, "mediaDevices_getUserMedia_reject");
+              // Native-like denial — meeting apps handle NotAllowedError; branded
+              // SecurityError/NotFoundError gets shipped to their Sentry.
+              return Promise.reject(makeNotAllowedError("Permission denied"));
+            }
+            return callNativeMedia(nativeGum, this, arguments, () =>
+              Promise.reject(makeNotAllowedError("Permission denied"))
+            );
+          }
+        : null;
+
+    const shimGdm = function getDisplayMediaShim() {
+      if (enabled("deviceSecurityHideMediaDevices")) {
+        bumpDevice(1, "mediaDevices_getDisplayMedia_reject");
+        return Promise.reject(makeNotAllowedError("Permission denied"));
+      }
+      if (typeof nativeGdm !== "function") {
+        return Promise.reject(makeNotAllowedError("Permission denied"));
+      }
+      return callNativeMedia(nativeGdm, this, arguments, () => Promise.reject(makeNotAllowedError("Permission denied")));
+    };
+
+    function patchMediaInstance(md) {
+      if (!md || typeof md !== "object") return;
+      if (instancePatched) {
+        if (instancePatched.has(md)) return;
+        instancePatched.add(md);
+      }
+      if (shimEnumerate) defineShimMethod(md, "enumerateDevices", shimEnumerate, "mediaDevices_assign_enumerateDevices_ignored");
+      if (shimGum) defineShimMethod(md, "getUserMedia", shimGum, "mediaDevices_assign_getUserMedia_ignored");
+      defineShimMethod(md, "getDisplayMedia", shimGdm, "mediaDevices_assign_getDisplayMedia_ignored");
+    }
+
     try {
       const od = Object.getOwnPropertyDescriptor(Navigator.prototype, "mediaDevices");
       if (od && typeof od.get === "function") {
         const nativeGet = od.get;
         const getter = function () {
           if (enabled("deviceSecurityHideMediaDevices")) {
-            bumpDeviceThrottled("mediaDevWin", 400, "navigator_mediaDevices_hidden");
-            return undefined;
+            bumpDeviceThrottled("mediaDevWin", 400, "navigator_mediaDevices_cam_mic_hidden");
           }
-          return nativeGet.call(navigator);
+          const md = nativeGet.call(navigator);
+          try {
+            patchMediaInstance(md);
+          } catch (_e) {}
+          return md;
         };
-        defineProp(Navigator.prototype, "mediaDevices", maybeLockdownDesc({ configurable: true, enumerable: od.enumerable !== false, get: getter }));
+        defineGuardedGetter(Navigator.prototype, "mediaDevices", getter, od.enumerable !== false, "navigator_assign_mediaDevices_ignored");
       }
     } catch (_e) {}
 
-    // Fallbacks: even if we can't hide the property, make calls fail/empty.
     try {
       if (typeof MediaDevices !== "undefined" && MediaDevices.prototype) {
-        if (typeof MediaDevices.prototype.enumerateDevices === "function") {
-          const nativeEnum = MediaDevices.prototype.enumerateDevices;
-          const shimEnum = function () {
-            if (enabled("deviceSecurityHideMediaDevices")) {
-              bumpDeviceThrottled("mediaEnum", 300, "mediaDevices_enumerateDevices_empty");
-              return Promise.resolve([]);
-            }
-            const ctx = getMediaDevicesContext(this);
-            if (!ctx) {
-              return Promise.resolve([]);
-            }
-            try {
-              return nativeEnum.apply(ctx, arguments);
-            } catch (e) {
-              if (isIllegalInvocationError(e)) {
-                bumpDeviceThrottled("mediaEnum", 300, "mediaDevices_enumerateDevices_safe_fallback");
-                return Promise.resolve([]);
-              }
-              throw e;
-            }
-          };
-          defineProp(MediaDevices.prototype, "enumerateDevices", maybeLockdownDesc({ configurable: true, writable: true, value: shimEnum }));
-        }
-        if (typeof MediaDevices.prototype.getUserMedia === "function") {
-          const nativeGum = MediaDevices.prototype.getUserMedia;
-          const shimGum = function () {
-            if (enabled("deviceSecurityHideMediaDevices")) {
-              bumpDevice(1, "mediaDevices_getUserMedia_reject");
-            }
-            const ctx = getMediaDevicesContext(this);
-            if (!ctx) {
-              return Promise.reject(makeNotFoundError("[Focus Blocker Device Security] mediaDevices unavailable"));
-            }
-            try {
-              return nativeGum.apply(ctx, arguments);
-            } catch (e) {
-              if (isIllegalInvocationError(e)) {
-                bumpDevice(1, "mediaDevices_getUserMedia_illegal_invocation");
-                return Promise.reject(makeSecurityError("[Focus Blocker Device Security] getUserMedia unavailable"));
-              }
-              throw e;
-            }
-          };
-          defineProp(MediaDevices.prototype, "getUserMedia", maybeLockdownDesc({ configurable: true, writable: true, value: shimGum }));
-        }
+        if (shimEnumerate) defineShimMethod(MediaDevices.prototype, "enumerateDevices", shimEnumerate, "mediaDevices_assign_enumerateDevices_ignored");
+        if (shimGum) defineShimMethod(MediaDevices.prototype, "getUserMedia", shimGum, "mediaDevices_assign_getUserMedia_ignored");
+        defineShimMethod(MediaDevices.prototype, "getDisplayMedia", shimGdm, "mediaDevices_assign_getDisplayMedia_ignored");
       }
     } catch (_e2) {}
   })();
 
   /* ---------------- Geolocation ---------------- */
   (function patchGeolocation() {
-    // Hide navigator.geolocation as undefined where possible.
+    // Keep the real geolocation object when hiding — returning undefined makes
+    // pages crash on `navigator.geolocation.getCurrentPosition`. Method shims
+    // enforce the block.
     try {
       const od = Object.getOwnPropertyDescriptor(Navigator.prototype, "geolocation");
       if (od && typeof od.get === "function") {
@@ -392,11 +559,10 @@
         const getter = function () {
           if (enabled("deviceSecurityHideGeolocation")) {
             bumpDeviceThrottled("geoWin", 400, "navigator_geolocation_hidden");
-            return undefined;
           }
           return nativeGet.call(navigator);
         };
-        defineProp(Navigator.prototype, "geolocation", maybeLockdownDesc({ configurable: true, enumerable: od.enumerable !== false, get: getter }));
+        defineGuardedGetter(Navigator.prototype, "geolocation", getter, od.enumerable !== false, "navigator_assign_geolocation_ignored");
       }
     } catch (_e) {}
 
@@ -413,7 +579,7 @@
               error({ code: 2, message: "Position unavailable" });
             }
           };
-          defineProp(Geolocation.prototype, "getCurrentPosition", maybeLockdownDesc({ configurable: true, writable: true, value: shim }));
+          defineShimMethod(Geolocation.prototype, "getCurrentPosition", shim, "geolocation_assign_getCurrentPosition_ignored");
         }
         const nativeWatch = Geolocation.prototype.watchPosition;
         if (typeof nativeWatch === "function") {
@@ -425,7 +591,7 @@
             }
             return -1;
           };
-          defineProp(Geolocation.prototype, "watchPosition", maybeLockdownDesc({ configurable: true, writable: true, value: shimWatch }));
+          defineShimMethod(Geolocation.prototype, "watchPosition", shimWatch, "geolocation_assign_watchPosition_ignored");
         }
       }
     } catch (_e2) {}
@@ -441,16 +607,18 @@
           const name = desc && typeof desc === "object" ? String(desc.name || "") : "";
           if (enabled("deviceSecurityHideMediaDevices") && (name === "camera" || name === "microphone")) {
             bumpDevice(1, "permissions_query_camera_mic_blocked");
-            return Promise.reject(makeSecurityError("[Focus Blocker Device Security] permission query blocked"));
+            // Resolve denied — rejecting with SecurityError makes Sentry noise and
+            // breaks NavigatorPermissions init in meeting apps.
+            return Promise.resolve(makeDeniedPermissionStatus(name));
           }
           if (enabled("deviceSecurityHideGeolocation") && name === "geolocation") {
             bumpDevice(1, "permissions_query_geolocation_blocked");
-            return Promise.reject(makeSecurityError("[Focus Blocker Device Security] permission query blocked"));
+            return Promise.resolve(makeDeniedPermissionStatus(name));
           }
         } catch (_e) {}
         return nativeQuery(desc);
       };
-      defineProp(navigator.permissions, "query", maybeLockdownDesc({ configurable: true, writable: true, value: shim }));
+      defineShimMethod(navigator.permissions, "query", shim, "permissions_assign_query_ignored");
     } catch (_e2) {}
   })();
 
@@ -484,17 +652,21 @@
     return null;
   }
   let fbChannelApi = fbResolveChannelApi();
-  let fbChannelKey = "";
-  try {
-    fbChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
-  } catch (_e) {
-    fbChannelKey = "";
+  function fbReadChannelKey() {
+    try {
+      return (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
+    } catch (_e) {
+      return "";
+    }
   }
+  // Lazy: re-read on verify if empty — MAIN may load before the isolated bridge sets data-fb-k.
+  let fbChannelKey = fbReadChannelKey();
   let fbLastSeq = 0;
 
   // Authentic payload = valid HMAC-SHA256 signature + strictly increasing seq (anti-replay).
   function fbVerifyPayload(payload) {
     if (!fbChannelApi) fbChannelApi = fbResolveChannelApi();
+    if (!fbChannelKey) fbChannelKey = fbReadChannelKey();
     if (!fbChannelApi || !fbChannelKey || !payload || typeof payload !== "object") return false;
     const seq = payload.seq;
     if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= fbLastSeq) return false;
@@ -510,19 +682,28 @@
     return true;
   }
 
-  window.addEventListener("message", (event) => {
-    if (event.source !== window || !event.data || event.data.type !== "FOCUS_BLOCKER_DEVICE_SECURITY_SETTINGS") return;
-    if (!fbVerifyPayload(event.data)) return;
-    applyPayload(event.data);
-  });
+  // Capture phase: registered at document_start, before page scripts can stopPropagation.
+  window.addEventListener(
+    "message",
+    (event) => {
+      if (event.source !== window || !event.data || event.data.type !== "FOCUS_BLOCKER_DEVICE_SECURITY_SETTINGS") return;
+      if (!fbVerifyPayload(event.data)) return;
+      applyPayload(event.data);
+    },
+    true
+  );
 
-  window.addEventListener("FOCUS_BLOCKER_DEVICE_SECURITY_SETTINGS_EVENT", (event) => {
-    try {
-      const detail = event && event.detail ? event.detail : {};
-      if (!fbVerifyPayload(detail)) return;
-      applyPayload(detail);
-    } catch (_e) {}
-  });
+  window.addEventListener(
+    "FOCUS_BLOCKER_DEVICE_SECURITY_SETTINGS_EVENT",
+    (event) => {
+      try {
+        const detail = event && event.detail ? event.detail : {};
+        if (!fbVerifyPayload(detail)) return;
+        applyPayload(detail);
+      } catch (_e) {}
+    },
+    true
+  );
 
   // In case settings-bridge posted before we subscribed.
   try {

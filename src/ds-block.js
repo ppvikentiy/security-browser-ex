@@ -356,17 +356,21 @@
     return null;
   }
   let fbChannelApi = fbResolveChannelApi();
-  let fbChannelKey = "";
-  try {
-    fbChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
-  } catch (_e) {
-    fbChannelKey = "";
+  function fbReadChannelKey() {
+    try {
+      return (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
+    } catch (_e) {
+      return "";
+    }
   }
+  // Lazy: re-read on verify if empty — MAIN may load before the isolated bridge sets data-fb-k.
+  let fbChannelKey = fbReadChannelKey();
   let fbLastSeq = 0;
 
   // Authentic payload = valid HMAC-SHA256 signature + strictly increasing seq (anti-replay).
   function fbVerifyPayload(payload) {
     if (!fbChannelApi) fbChannelApi = fbResolveChannelApi();
+    if (!fbChannelKey) fbChannelKey = fbReadChannelKey();
     if (!fbChannelApi || !fbChannelKey || !payload || typeof payload !== "object") return false;
     const seq = payload.seq;
     if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= fbLastSeq) return false;
@@ -382,19 +386,28 @@
     return true;
   }
 
-  window.addEventListener("message", (event) => {
-    if (event.source !== window || !event.data || event.data.type !== "FOCUS_BLOCKER_DS_BLOCK_SETTINGS") return;
-    if (!fbVerifyPayload(event.data)) return;
-    applyPayload(event.data);
-  });
+  // Capture phase: registered at document_start, before page scripts can stopPropagation.
+  window.addEventListener(
+    "message",
+    (event) => {
+      if (event.source !== window || !event.data || event.data.type !== "FOCUS_BLOCKER_DS_BLOCK_SETTINGS") return;
+      if (!fbVerifyPayload(event.data)) return;
+      applyPayload(event.data);
+    },
+    true
+  );
 
-  window.addEventListener("FOCUS_BLOCKER_DS_BLOCK_SETTINGS_EVENT", (/** @type {CustomEvent} */ event) => {
-    try {
-      const detail = event && event.detail ? event.detail : {};
-      if (!fbVerifyPayload(detail)) return;
-      applyPayload(detail);
-    } catch (_e) {}
-  });
+  window.addEventListener(
+    "FOCUS_BLOCKER_DS_BLOCK_SETTINGS_EVENT",
+    (/** @type {CustomEvent} */ event) => {
+      try {
+        const detail = event && event.detail ? event.detail : {};
+        if (!fbVerifyPayload(detail)) return;
+        applyPayload(detail);
+      } catch (_e) {}
+    },
+    true
+  );
 
   updateCosmeticStyle();
 

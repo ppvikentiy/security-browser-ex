@@ -30,6 +30,20 @@
     return clamp(n, min, max);
   }
 
+  /**
+   * Lockdown getter descriptor with a no-op setter.
+   * Getter-only + configurable:false throws TypeError in strict mode when the
+   * page assigns (e.g. `navigator.userAgent = …`, `window.innerWidth = …`).
+   */
+  function lockedGetterDesc(enumerable, getter) {
+    return {
+      configurable: false,
+      enumerable: enumerable !== false,
+      get: getter,
+      set() {},
+    };
+  }
+
   function isIllegalInvocationError(err) {
     if (!err) return false;
     const msg = typeof err.message === "string" ? err.message : "";
@@ -589,13 +603,9 @@
     if (!od || typeof od.get !== "function") return;
     const nativeGet = od.get;
     try {
-      Object.defineProperty(Screen.prototype, prop, {
-        configurable: false, // lockdown to prevent page from replacing
-        enumerable: od.enumerable !== false,
-        get() {
-          return spoofEnabled("securitySpoofScreenEnabled") ? screenVals()[key] : nativeGet.call(window.screen);
-        },
-      });
+      Object.defineProperty(Screen.prototype, prop, lockedGetterDesc(od.enumerable !== false, function () {
+        return spoofEnabled("securitySpoofScreenEnabled") ? screenVals()[key] : nativeGet.call(window.screen);
+      }));
     } catch (e) {}
   }
 
@@ -609,13 +619,9 @@
     if (!od || typeof od.get !== "function") return;
     const nativeGet = od.get;
     try {
-      Object.defineProperty(Window.prototype, prop, {
-        configurable: false, // lockdown to prevent page from replacing
-        enumerable: od.enumerable !== false,
-        get() {
-          return spoofEnabled("securitySpoofScreenEnabled") ? screenVals()[key] : nativeGet.call(window);
-        },
-      });
+      Object.defineProperty(Window.prototype, prop, lockedGetterDesc(od.enumerable !== false, function () {
+        return spoofEnabled("securitySpoofScreenEnabled") ? screenVals()[key] : nativeGet.call(window);
+      }));
     } catch (e) {}
   }
 
@@ -633,19 +639,15 @@
     const nativeGet = typeof od.get === "function" ? od.get : null;
     const nativeVal = "value" in od ? od.value : undefined;
     try {
-      Object.defineProperty(proto, prop, {
-        configurable: false, // lockdown to prevent page from replacing
-        enumerable: od.enumerable !== false,
-        get() {
-          if (!spoofEnabled(flag)) {
-            if (nativeGet) return nativeGet.call(navigator);
-            return nativeVal;
-          }
-          const cpu =
-            state.security && isPlainObject(state.security.securityCpu) ? state.security.securityCpu : DEFAULTS.cpu;
-          return typeof cpu[key] === "number" ? cpu[key] : nativeGet ? nativeGet.call(navigator) : nativeVal;
-        },
-      });
+      Object.defineProperty(proto, prop, lockedGetterDesc(od.enumerable !== false, function () {
+        if (!spoofEnabled(flag)) {
+          if (nativeGet) return nativeGet.call(navigator);
+          return nativeVal;
+        }
+        const cpu =
+          state.security && isPlainObject(state.security.securityCpu) ? state.security.securityCpu : DEFAULTS.cpu;
+        return typeof cpu[key] === "number" ? cpu[key] : nativeGet ? nativeGet.call(navigator) : nativeVal;
+      }));
     } catch (e) {}
   }
 
@@ -835,11 +837,7 @@
 
     let patched = false;
     try {
-      Object.defineProperty(proto, prop, {
-        configurable: false, // lockdown to prevent page from replacing
-        enumerable: od.enumerable !== false,
-        get: getter,
-      });
+      Object.defineProperty(proto, prop, lockedGetterDesc(od.enumerable !== false, getter));
       patched = true;
     } catch (e) {
       patched = false;
@@ -848,11 +846,7 @@
     // Fallback: patch the navigator instance if prototype is non-configurable.
     if (!patched) {
       try {
-        Object.defineProperty(navigator, prop, {
-          configurable: false,
-          enumerable: od.enumerable !== false,
-          get: getter,
-        });
+        Object.defineProperty(navigator, prop, lockedGetterDesc(od.enumerable !== false, getter));
         patched = true;
       } catch (e2) {}
     }
@@ -913,11 +907,7 @@
 
     let patched = false;
     try {
-      Object.defineProperty(proto, "languages", {
-        configurable: false,
-        enumerable: od.enumerable !== false,
-        get: getter,
-      });
+      Object.defineProperty(proto, "languages", lockedGetterDesc(od.enumerable !== false, getter));
       patched = true;
     } catch (_e3) {
       patched = false;
@@ -925,11 +915,7 @@
 
     if (!patched) {
       try {
-        Object.defineProperty(navigator, "languages", {
-          configurable: false,
-          enumerable: od.enumerable !== false,
-          get: getter,
-        });
+        Object.defineProperty(navigator, "languages", lockedGetterDesc(od.enumerable !== false, getter));
         patched = true;
       } catch (_e4) {}
     }
@@ -1039,34 +1025,34 @@
 
   if (nativeGetNavigatorUAData) {
     try {
-      Object.defineProperty(Navigator.prototype, "userAgentData", {
-          configurable: false,
-        enumerable: uaDataDesc.enumerable !== false,
-        get() {
+      Object.defineProperty(
+        Navigator.prototype,
+        "userAgentData",
+        lockedGetterDesc(uaDataDesc.enumerable !== false, function () {
           if (!spoofEnabled("securitySpoofNavigatorEnabled")) {
             return nativeGetNavigatorUAData.call(navigator);
           }
           const nativeObj = nativeGetNavigatorUAData.call(navigator);
           return buildSpoofNavigatorUAData(nativeObj);
-        },
-      });
+        })
+      );
       dbgUserAgentDataPrototype = true;
     } catch (e) {}
 
     // Fallback: some environments don't allow patching the prototype getter.
     try {
       if (!Object.getOwnPropertyDescriptor(navigator, "userAgentData")) {
-        Object.defineProperty(navigator, "userAgentData", {
-            configurable: false,
-          enumerable: uaDataDesc.enumerable !== false,
-          get() {
+        Object.defineProperty(
+          navigator,
+          "userAgentData",
+          lockedGetterDesc(uaDataDesc.enumerable !== false, function () {
             if (!spoofEnabled("securitySpoofNavigatorEnabled")) {
               return nativeGetNavigatorUAData.call(navigator);
             }
             const nativeObj = nativeGetNavigatorUAData.call(navigator);
             return buildSpoofNavigatorUAData(nativeObj);
-          },
-        });
+          })
+        );
         dbgUserAgentDataInstance = true;
       }
     } catch (e2) {}
@@ -1178,8 +1164,8 @@
       Object.defineProperty(FontFaceSet.prototype, "check", {
         configurable: false,
         enumerable: true,
-        writable: true,
-        value: patchedFontFaceSetCheck,
+        get: () => patchedFontFaceSetCheck,
+        set() {},
       });
       dbgFontFaceSetPrototype = true;
     } catch (_e) {
@@ -1202,8 +1188,8 @@
       Object.defineProperty(document.fonts, "check", {
         configurable: false,
         enumerable: true,
-        writable: true,
-        value: patchedDocumentFontsCheck,
+        get: () => patchedDocumentFontsCheck,
+        set() {},
       });
       dbgDocumentFontsCheck = true;
     } catch (_e3) {
@@ -1700,11 +1686,19 @@
         ? payload.workerScriptUrl.trim()
         : "";
 
-    // Accept workerScriptUrl only if it points to our extension.
+    // Accept workerScriptUrl only if it points at our worker script.
+    // MAIN world has no chrome.runtime, so we cannot compare chrome.runtime.id —
+    // authenticity comes from the HMAC check above; the bridge is the only signer
+    // and always sends chrome.runtime.getURL("src/security-worker.js").
     let nextWorkerUrl = workerScriptUrl;
     try {
       const u = nextWorkerUrlRaw ? new URL(nextWorkerUrlRaw) : null;
-      if (u && u.protocol === "chrome-extension:" && chrome && chrome.runtime && u.host === chrome.runtime.id) {
+      if (
+        u &&
+        u.protocol === "chrome-extension:" &&
+        typeof u.pathname === "string" &&
+        /\/src\/security-worker\.js$/i.test(u.pathname)
+      ) {
         nextWorkerUrl = u.href;
       }
     } catch (_e) {}
@@ -1748,17 +1742,21 @@
     return null;
   }
   let fbChannelApi = fbResolveChannelApi();
-  let fbChannelKey = "";
-  try {
-    fbChannelKey = (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
-  } catch (_e) {
-    fbChannelKey = "";
+  function fbReadChannelKey() {
+    try {
+      return (document && document.documentElement && document.documentElement.getAttribute("data-fb-k")) || "";
+    } catch (_e) {
+      return "";
+    }
   }
+  // Lazy: re-read on verify if empty — MAIN may load before the isolated bridge sets data-fb-k.
+  let fbChannelKey = fbReadChannelKey();
   let fbLastSeq = 0;
 
   // Authentic payload = valid HMAC-SHA256 signature + strictly increasing seq (anti-replay).
   function fbVerifyPayload(payload) {
     if (!fbChannelApi) fbChannelApi = fbResolveChannelApi();
+    if (!fbChannelKey) fbChannelKey = fbReadChannelKey();
     if (!fbChannelApi || !fbChannelKey || !payload || typeof payload !== "object") return false;
     const seq = payload.seq;
     if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= fbLastSeq) return false;
@@ -1774,20 +1772,29 @@
     return true;
   }
 
-  window.addEventListener("message", (event) => {
-    if (event.source !== window || !event.data || event.data.type !== "FOCUS_BLOCKER_SECURITY_SETTINGS") return;
-    if (!fbVerifyPayload(event.data)) return;
-    updateStateFromPayload(event.data);
-  });
+  window.addEventListener(
+    "message",
+    (event) => {
+      if (event.source !== window || !event.data || event.data.type !== "FOCUS_BLOCKER_SECURITY_SETTINGS") return;
+      if (!fbVerifyPayload(event.data)) return;
+      updateStateFromPayload(event.data);
+    },
+    true
+  );
 
   // Same payload via direct CustomEvent (more reliable than postMessage timing).
-  window.addEventListener("FOCUS_BLOCKER_SECURITY_SETTINGS_EVENT", (event) => {
-    try {
-      const detail = event && event.detail ? event.detail : null;
-      if (!fbVerifyPayload(detail)) return;
-      updateStateFromPayload(detail);
-    } catch (e) {}
-  });
+  // Capture phase: registered at document_start, before page scripts can stopPropagation.
+  window.addEventListener(
+    "FOCUS_BLOCKER_SECURITY_SETTINGS_EVENT",
+    (event) => {
+      try {
+        const detail = event && event.detail ? event.detail : null;
+        if (!fbVerifyPayload(detail)) return;
+        updateStateFromPayload(detail);
+      } catch (e) {}
+    },
+    true
+  );
 
   // In case settings-bridge posted before we subscribed.
   try {

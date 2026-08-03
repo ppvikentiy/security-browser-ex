@@ -666,7 +666,7 @@ const DEFAULT_DEVICE_SECURITY = {
   deviceSecurityBlockIndexedDb: true,
   /** Block Cache API (caches.* + CacheStorage methods). */
   deviceSecurityBlockCacheApi: true,
-  /** Hide camera/microphone APIs (navigator.mediaDevices). */
+  /** Hide camera/microphone capture APIs; speakers (audiooutput) stay listed. */
   deviceSecurityHideMediaDevices: true,
   /** Hide geolocation API (navigator.geolocation). */
   deviceSecurityHideGeolocation: true,

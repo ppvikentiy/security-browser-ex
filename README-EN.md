@@ -10,15 +10,14 @@
 
 Chromium extension (Manifest V3): focus/visibility hardening, anti-fingerprinting, optional network and device privacy tools, **on-page caution banners** when heuristic checks trigger, statistics, accessibility toggles, and a dedicated **extension options page** ([`public/options.html`](./public/options.html); see `options_page` in [`manifest.json`](./manifest.json)). The toolbar popup offers quick toggles and an **«All settings…»** link.
 
-**Version:** see `"version"` in [`manifest.json`](./manifest.json).
+**Version:** **3.0.0** (see also `"version"` in [`manifest.json`](./manifest.json)).
 
-> **What's new in 2.7.0**
+> **What's new in 3.0.0**
 >
-> * **Multilingual UI** — Russian, English, and Ukrainian. The language is chosen under Accessibility (`optionsUiLanguage`) and applies immediately to the options page, toolbar popup, and Threat Shield banner. String catalog: [`src/i18n.js`](./src/i18n.js) (regenerate with `node tools/gen-i18n.mjs`); UI markup uses `data-i18n*` attributes.
-> * **Icon** — updated lock mark and PNG assets under [`assets/`](./assets/).
-> * **Tab pause** — pause state now reaches content scripts reliably: fixed `chrome.storage.session.onChanged` listener shape, plus an explicit `FB_REFRESH_SETTINGS` message after pause/unpause (and when pause clears on URL change). Modules could previously keep running after “Temporarily disable on this tab”.
-> * **Copy helper** — respects the global master switch and per-tab pause (highlight used to stay active).
-> * **Options page** — pending edits are no longer dropped when a storage write is already in flight (queued re-flush).
+> * **Settings channel (isolated → MAIN)** — more reliable HMAC delivery: lazy `data-fb-k` capture, key attribute removed after Focus ACK (or a 5s timeout), capture-phase listeners, `postMessage` with target `"*"` (opaque origins no longer silently drop messages), and MAIN acceptance of `workerScriptUrl` without `chrome.runtime`.
+> * **Device Security — camera/mic without speakers** — `enumerateDevices` hides only `audioinput` / `videoinput`; speakers (`audiooutput`) stay listed. `getUserMedia` / `getDisplayMedia` and `permissions.query` use native-shaped denials (`NotAllowedError` / `state: "denied"`) instead of branded `SecurityError` noise in site consoles/Sentry.
+> * **Page compatibility** — lockdown descriptors use no-op setters (vendor bundles no longer crash on `getUserMedia = …`); geolocation is not replaced with `undefined`; blocked IndexedDB returns an async request error instead of a sync `throw`.
+> * **Anti-fingerprint** — screen / navigator / UA-CH lockdown getters also use no-op setters so page assignments in strict mode do not throw `TypeError`.
 
 Source: [https://github.com/ppvikentiy/security-browser-ex](https://github.com/ppvikentiy/security-browser-ex)
 
@@ -40,7 +39,7 @@ License: [MIT](./LICENSE)
 * **Network Security** — DNR blocks page-initiated requests to localhost/private/link-local targets; optional WebRTC IP-hardening via `chrome.privacy.network.webRTCIPHandlingPolicy`
 * **Privacy pack** — separate DNR tracker list (narrow vs wide resource types); independent of ADS Block cosmetics/popups
 * **Isolation (`chrome.privacy`)** — optional profile-wide Referer off, hyperlink auditing off, network prediction off (see payment/SSO caveats in the UI)
-* **Device Security** — strict limits on storage/IndexedDB/cache; hide `mediaDevices` / `geolocation`; lockdown option
+* **Device Security** — strict limits on storage/IndexedDB/cache; hide camera/microphone (speakers `audiooutput` kept) and block geolocation; lockdown descriptors that do not TypeError on page assignment
 * **Threat Shield** — top-frame overlay banner when heuristics match: plain HTTP on public hosts (excluding local/private detection), builtin + custom suspicious host patterns, “stacked TLD” look-alikes using configurable suffix tails, optional long/garbage-looking FQDN heuristic, chains of HTTP redirects before the document loads; whitelist and extra patterns in settings. In the RU options UI this panel is labeled **«Активная интернет защита»**. Banner copy lives in [`src/threat-shield.js`](src/threat-shield.js) (upstream strings are largely Russian).
 * **ADS Block** — popups/adjacent nuisance blocking without user gesture, cosmetic CSS (via `chrome.scripting` for strict CSP), telemetry domain blocking via DNR; custom lists. Implemented in [`src/ds-block.js`](src/ds-block.js); internal message keys still use the `DS_BLOCK` prefix.
 * **Copy helper** — unlock common copy blocks; highlight + shortcuts (see the **«Copy assistant» / «Помощник при копировании»** section—wording follows UI locale).
@@ -136,12 +135,12 @@ The isolated → MAIN channel is authenticated so a malicious page cannot disabl
 
 * **`src/fb-channel.js`** (isolated world) and **`src/fb-channel-main.js`** (MAIN) — shared library, loaded first in its `content_scripts` entry: pure-JS SHA-256 / HMAC-SHA256 (synchronous, works on `http://` pages where `crypto.subtle` is unavailable) plus a deterministic `stableStringify` with sorted keys. All natives it relies on (`TextEncoder`, `JSON.stringify`, `Object.keys`, `Array.prototype.sort`, `Uint8Array`, …) are captured at `document_start` before any page script runs, and the exported API is frozen so the page cannot swap methods to steal the key. It is published in three places — `globalThis.__fbChannel`, `document.documentElement.__fbChannelApi`, and `Document.prototype.__fbChannelGet` (all non-writable)
 * **The byte-identical per-world copies are deliberate.** A script path listed in several `content_scripts` entries can be injected into a document only once, so the isolated entry consumed the single injection and MAIN modules were left with no channel at all, rejecting every signed settings message (Threat Shield silent, Device Security stuck fail-closed with IndexedDB blocked). The defaults file is duplicated for the same reason — `src/security-defaults.js` (isolated world, options page, service worker) and `src/security-defaults-main.js` (MAIN) — otherwise MAIN modules silently fell back to trimmed inline defaults and ADS Block lost its builtin domain/selector lists. When you change one file, copy it over the other; verify or repair both pairs with `node tools/check-world-copies.mjs [--fix]`
-* **Key** — 32 random bytes per page load; the bridge hands it to MAIN modules via a short-lived `<html data-fb-k="...">` attribute removed after the first broadcast. The key is **never placed inside messages**
+* **Key** — 32 random bytes per page load; the bridge hands it to MAIN modules via a short-lived `<html data-fb-k="...">` attribute. MAIN modules re-read the key on verify if needed; the attribute is removed after Focus ACK or a ~5s timeout, not immediately after the first async broadcast. The key is **never placed inside messages**
 * **Signature** — each message carries a monotonic `seq` counter and `sig = HMAC(key, stableStringify(payload without sig))`; MAIN modules verify the signature and require a strictly increasing `seq` (anti-replay)
-* **Fail-closed** — Network Security and Device Security start enabled and can only be turned off by a signed message; the anti-fingerprint `workerScriptUrl` is accepted only when it is a `chrome-extension://` URL of this extension; critical API hooks are pinned with `configurable: false`
+* **Fail-closed** — Network Security and Device Security start enabled and can only be turned off by a signed message; the anti-fingerprint `workerScriptUrl` is accepted from the HMAC payload as a `chrome-extension://…/src/security-worker.js` URL (MAIN has no `chrome.runtime`); critical API hooks are pinned with `configurable: false` plus a no-op setter so page assignment does not crash
 * The cosmetic-CSS handler in `background.js` additionally checks `sender.id` and caps CSS size
 
-Residual risk: the key attribute exists from `document_start` until the first settings broadcast (milliseconds) — an inline script at the very top of `<head>` could theoretically read it. The attack bar is raised from "passively listen to `postMessage`" to "actively read a DOM attribute within a narrow load window".
+Residual risk: the key attribute exists from `document_start` until ACK/timeout (usually milliseconds to a few seconds) — an inline script at the top of `<head>` could theoretically read it. The attack bar is raised from "passively listen to `postMessage`" to "actively read a DOM attribute within the load window".
 
 ### Stats path
 
