@@ -1,4 +1,4 @@
-![Static Badge](https://img.shields.io/badge/Created_by-Vikentiy_Pachovskiy-brightgreen)  [![Google Chrome](https://img.shields.io/badge/Google%20Chrome-4285F4?logo=GoogleChrome&logoColor=white)](#)
+![JavaScript](https://img.shields.io/badge/javascript-%23323330.svg?style=for-the-badge&logo=javascript&logoColor=%23F7DF1E)  ![Static Badge](https://img.shields.io/badge/Created_by-Vikentiy_Pachovskiy-brightgreen)  [![Google Chrome](https://img.shields.io/badge/Google%20Chrome-4285F4?logo=GoogleChrome&logoColor=white)](#)  ![Opera](https://img.shields.io/badge/Opera-%23FF1B2D.svg?style=for-the-badge&logo=Opera&logoColor=white)
 
 > 📄 [English version](./README-EN.md)
 
@@ -6,7 +6,16 @@
 
 # Browser Security
 
+Browser Security — локальный щит между вами и страницей для Chrome, Opera и других Chromium-сборок: меньше слежки, меньше отпечатка, явное предупреждение на сомнительном адресе. Облака нет: история вкладок никуда не уходит, модули включаются по отдельности, сайт можно исключить, вкладку — поставить на паузу.
 
+* **Вкладка и фокус** — страница не должна уверенно знать, что вы переключились или свернули окно.
+* **Отпечаток** — экран, Canvas, WebGL, язык и User-Agent выглядят менее уникальными.
+* **Сеть** — запросы к localhost и частным адресам режутся; по желанию ужесточается WebRTC.
+* **Трекеры и изоляция** — короткий блок трекер-доменов, опционально Referer / ping / prefetch на весь профиль.
+* **Устройство** — жёстче хранилища страницы; камера и микрофон скрыты, динамики остаются.
+* **Подозрительные сайты** — локальный баннер при HTTP, фишинг-похожем хосте или цепочке редиректов.
+* **Помехи** — попапы без жеста, косметический мусор, телеметрия; отдельно — обход запрета копирования.
+* **Управление** — попап для быстрых действий, страница параметров для всего остального, статистика по доменам, UI на ru / en / uk.
 
 Расширение для Chromium (Manifest V3): защита от слежки за фокусом и вкладкой, анти‑фингерпринт, сетевые и «устройственные» модули, оповещения о подозрительных страницах и полноценная **страница параметров** ([`public/options.html`](./public/options.html), в манифесте — [`options_page`](./manifest.json)): исключённые домены, все модули, статистика, доступность. Во всплывающем окне действий — быстрые переключатели и ссылка «Все настройки…».
 
@@ -23,6 +32,12 @@
 
 Лицензия: [MIT](./LICENSE)
 
+## Download
+
+![Opera](https://img.shields.io/badge/Opera-%23FF1B2D.svg?style=for-the-badge&logo=Opera&logoColor=white) [![Скачать](https://img.shields.io/badge/Скачать-2ea44f?style=for-the-badge)](https://addons.opera.com/ru/extensions/details/browser-security/)
+
+![GitHub](https://img.shields.io/badge/github-%23121011.svg?style=for-the-badge&logo=github&logoColor=white) [![Скачать](https://img.shields.io/badge/Скачать-2ea44f?style=for-the-badge)](https://github.com/ppvikentiy/security-browser-ex)
+
 ## Что умеет расширение
 
 ### Базовый модуль (Focus Blocker)
@@ -30,20 +45,21 @@
 * Блокирует типичные сигналы «ушёл с вкладки / потерял фокус»: `visibilitychange` (включая vendor‑варианты), `blur` / `focus` / `focusin` / `focusout`
 * Подменяет чтение `document.hidden`, `visibilityState` и связанных полей так, чтобы страница «видела» вкладку как всегда активную (когда модуль включён)
 * Ограничивает `addEventListener` / `removeEventListener` / `dispatchEvent` для перечисленных типов событий и inline‑обработчики `window.onfocus` / `window.onblur` / `document.onvisibilitychange` — только пока соответствующий тип события включён в списке блокировки
+* Перехватчики `addEventListener` / `removeEventListener` не проксируют натив для `unload` / `beforeunload` (и глушат `Permissions-Policy` violation), чтобы страницы с политикой `unload=()` не сыпали ошибками в консоль
 * **Жёсткая подмена (lifecycle)** — отдельный переключатель в настройках (`focusBlockingStrict`, **по умолчанию выключен**): к вашему списку событий добавляются `freeze`, `resume`, `pagehide`, `pageshow`, с подавлением связанных inline‑свойств (`window.onpageshow`, `window.onpagehide`, `document.onfreeze`, `document.onresume` при поддержке в браузере). Может мешать SPA и восстановлению страницы из bfcache
 
 ### Расширенные возможности
 
-* **Попап и глобальное включение** — один переключатель «всё расширение», отдельно Focus Blocker, анти‑фингерпринт и Network Security; пауза только для текущей вкладки; быстро добавить сайт в исключения
+* **Попап** — мастер‑переключатель «всё расширение» и три модуля: Focus Blocker, анти‑фингерпринт (`securityEnabled`), Network Security. Пауза только для текущей вкладки; быстро добавить текущий хост в исключения. ADS Block, Device Security, Threat Shield, Privacy pack и изоляция настраиваются **только** на странице параметров
 * **Анти‑фингерпринт (Security)** — подмена в JS и через заголовки запросов: экран/окно, батарея, CPU/память, `matchMedia`, WebGL, шум Canvas, часовой пояс, `navigator` / User‑Agent / Client Hints, языки и `Accept-Language`, allowlist шрифтов; режимы отпечатка (per domain / session / random)
 * **Network Security** — блокировка запросов из страницы к localhost, частным и link‑local сетям (через Declarative Net Request), опционально жёсткая политика WebRTC против утечки IP (`chrome.privacy.network.webRTCIPHandlingPolicy`)
 * **Privacy pack** — отдельный набор DNR‑правил под короткий список трекер‑доменов (узкий или широкий набор типов ресурсов); не смешивается с косметикой ADS Block
 * **Изоляция (`chrome.privacy`)** — глобально: отключение Referer, hyperlink auditing (`<a ping>`), network prediction/prefetch; см. предупреждения в настройках (SSO, оплаты, CDN)
 * **Device Security** — жёсткое ограничение `localStorage` / `sessionStorage`, IndexedDB, Cache API; скрытие камеры/микрофона (динамики `audiooutput` сохраняются) и блокировка geolocation; режим lockdown дескрипторов без TypeError при присвоениях страницы
-* **Threat Shield** («Активная интернет защита» в настройках) — локальное предупреждение поверх страницы (основной фрейм) при срабатывании эвристик: не‑HTTPS для публичных хостов, совпадение с встроенным или пользовательским списком «подозрительных» шаблонов хостов, похожие на фишинг многослойные TLD, опционально «мусорная» форма FQDN, цепочка HTTP‑редиректов до документа; белый список и дополнительные паттерны в настройках; текст баннера задан в [`src/threat-shield.js`](src/threat-shield.js)
-* **ADS Block** (ранее модуль DS Block; код — [`src/ds-block.js`](src/ds-block.js)) — попапы без пользовательского жеста, косметическое скрытие по CSS (в т.ч. через `chrome.scripting` для строгого CSP), блок телеметрии доменами через DNR; свои списки доменов и селекторов
-* **Копирование** — обход частых блокировок копирования; подсветка элемента и горячие клавиши (см. настройки раздела «Помощник при копировании»)
-* **Доступность** — язык интерфейса (ru / en / uk), уменьшение анимаций и более спокойный вид (секция «Доступность»)
+* **Threat Shield** («Активная интернет защита» в настройках) — локальное предупреждение поверх страницы (основной фрейм) при срабатывании эвристик: не‑HTTPS для публичных хостов, совпадение с встроенным или пользовательским списком «подозрительных» шаблонов хостов, похожие на фишинг многослойные TLD, опционально «мусорная» форма FQDN, цепочка HTTP‑редиректов до документа; белый список и дополнительные паттерны в настройках. Текст баннера локализован (ru / en / uk) в [`src/threat-shield.js`](src/threat-shield.js) по языку интерфейса
+* **ADS Block** (ранее модуль DS Block; код — [`src/ds-block.js`](src/ds-block.js); внутренние ключи сообщений по‑прежнему с префиксом `DS_BLOCK`) — попапы без пользовательского жеста, косметическое скрытие по CSS (в т.ч. через `chrome.scripting` для строгого CSP), блок телеметрии доменами через DNR; свои списки доменов и селекторов
+* **Копирование** — обход частых блокировок копирования; подсветка элемента и горячие клавиши (см. настройки раздела «Помощник при копировании»). Скрипт живёт в **изолированном** мире, `run_at: document_idle` (отдельная запись `content_scripts`, не MAIN)
+* **Доступность** — язык интерфейса (ru / en / uk) для страницы параметров, попапа и баннера Threat Shield; уменьшение анимаций и более спокойный вид (секция «Доступность»). Каталоги строк — [`src/i18n.js`](src/i18n.js)
 * **Исключённые домены** — шаблоны хостов (в т.ч. `*.example.com`); на модули и часть DNR влияет список исключений; глобальные `chrome.privacy` для всего браузера от исключений не откатываются автоматически
 * **Статистика** — локальные суммы по домену верхнего окна: фокус, подмены FP, сеть в JS, DNR, устройство, ADS Block; при настроенном `declarativeNetRequestFeedback` — учёт срабатываний правил DNR для бейджа и таблицы
 
@@ -53,15 +69,21 @@
 
 1. Скачайте архив репозитория: [https://github.com/ppvikentiy/security-browser-ex](https://github.com/ppvikentiy/security-browser-ex) (Code → Download ZIP), либо клонируйте этот репозиторий
 2. Распакуйте папку (если скачивали ZIP)
-3. Откройте `chrome://extensions/`, включите «Режим разработчика»
+3. Откройте страницу расширений: в Chrome — `chrome://extensions/`, в Opera — `opera://extensions/`; включите «Режим разработчика»
 4. «Загрузить распакованное расширение» → выберите корень проекта (папку, где лежит [`manifest.json`](./manifest.json))
-5. Параметры: из попапа ссылка **«Все настройки…»** или `chrome://extensions` → карточка расширения → «Просмотреть на странице параметров расширения» / пункт про расширенные настройки (зависит от версии браузера)
+5. Параметры: из попапа ссылка **«Все настройки…»** или страница расширений → карточка расширения → «Просмотреть на странице параметров расширения» / пункт про расширенные настройки (зависит от версии браузера)
 
 ## Совместимость
 
-* **Браузеры**: Chromium 111+ (Chrome и совместимые сборки)
+* **Браузеры**: Chromium 111+ — Google Chrome и совместимые сборки, включая Opera
 * **Manifest**: 3
-* **Сайты**: `http` / `https` (и см. `match_about_blank` в манифесте)
+* **Сайты**: `http` / `https` (в манифесте: `match_about_blank`, `match_origin_as_fallback`, `all_frames`)
+
+## Инструменты разработчика
+
+* `node tools/check-world-copies.mjs` — проверить, что пары `fb-channel.js` / `fb-channel-main.js` и `security-defaults.js` / `security-defaults-main.js` байт‑идентичны
+* `node tools/check-world-copies.mjs --fix` — скопировать «основные» файлы поверх MAIN‑копий
+* `node tools/gen-i18n.mjs` — пересобрать [`src/i18n.js`](src/i18n.js) из каталогов в самом генераторе (после смены строк UI)
 
 ---
 
@@ -80,15 +102,23 @@
 | `privacy` | WebRTC policy, Referer / ping / network prediction |
 | `host_permissions` `*://*/*` | Условия DNR и работа с вкладками на обычных сайтах |
 
+### Записи `content_scripts` в манифесте
+
+1. **Изолированный мир, `document_start`** — `fb-channel.js`, `security-defaults.js`, `settings-bridge.js`, `stats-bridge.js`
+2. **MAIN, `document_start`** — `fb-channel-main.js`, `security-defaults-main.js`, `stats-main.js`, `device-security.js`, `content.js`, `security.js`, `network-security.js`, `ds-block.js`, `threat-shield.js` (одна запись: общий путь нельзя внедрить дважды)
+3. **Изолированный мир, `document_idle`** — `copy-helper.js`
+
+`web_accessible_resources`: [`src/security-worker.js`](src/security-worker.js) для тяжёлых патчей анти‑фингерпринта.
+
 ### Service Worker (`src/background.js`)
 
 При `runtime.onInstalled`, `runtime.onStartup` и при изменении релевантных ключей в `storage` вызывается **`reloadFromStorageSnapshot()`**:
 
 1. **Подмена заголовков User-Agent и Client Hints** — правило `modifyHeaders` (id `990001`), если включены расширение, Security и флаг Navigator/UA; при ошибке Chromium применяется стратегия «полный набор → урезанный → только User-Agent»
 2. **Accept-Language** — отдельное правило `modifyHeaders` (id `990002`), если включены Security и Languages
-3. **Сетевые блокировки** — до 12 правил `block` с `regexFilter` на localhost / RFC1918 / link-local / ULA IPv6 для типов ресурсов без `main_frame`/`sub_frame`, чтобы не ломать прямой заход на LAN‑страницы
-4. **ADS Block телеметрия** — блок доменами пакетами по 40 доменов на правило, слоты с `990060`
-5. **Privacy pack** — аналогично, слоты с `990078`, узкий или широкий набор `resourceTypes`
+3. **Сетевые блокировки** — до 12 правил `block` с `regexFilter` на localhost / RFC1918 / link-local / ULA IPv6 для типов ресурсов без `main_frame`/`sub_frame`, чтобы не ломать прямой заход на LAN‑страницы (слоты с `990020`)
+4. **ADS Block телеметрия** — блок доменами пакетами по 40 доменов на правило, слоты с `990060` (18 слотов)
+5. **Privacy pack** — аналогично, слоты с `990078` (20 слотов), узкий или широкий набор `resourceTypes`
 6. **WebRTC** — `chrome.privacy.network.webRTCIPHandlingPolicy.set` или `clear` в зависимости от Network Security
 7. **Изоляция** — `referrersEnabled`, `hyperlinkAuditingEnabled`, `networkPredictionEnabled` через `chrome.privacy`
 
@@ -97,8 +127,8 @@
 Дополнительно:
 
 * **Пауза вкладки** — `chrome.storage.session`: ключ `focusBlockerPausedTabIds` (`{ [tabId]: true }`), сброс при смене URL / закрытии вкладки
-* **Косметика ADS Block** — хранение CSS по `tabId`, применение через `scripting` API
-* **Статистика** — ключ `focusBlockerStatsByHost` в `chrome.storage.local` (см. миграцию из `sync` выше); инкремент из контента через сообщения и из `declarativeNetRequest.onRuleMatchedDebug` при доступности
+* **Косметика ADS Block** — хранение CSS по `tabId` (`focusBlockerDsCosmeticCssByTabId`), применение через `scripting` API
+* **Статистика** — ключ `focusBlockerStatsByHost` в `chrome.storage.local` (см. миграцию из `sync` выше); инкремент из контента через сообщения и из `declarativeNetRequest.onRuleMatchedDebug` при доступности; поля счётчика: `focus`, `fpSpoof`, `netJs`, `device`, `ds`, `dnrBlock`, `dnrModify`
 * **Бейдж** — сумма полей счётчика активной вкладки в `focusBlockerTabStat` (session)
 
 ### Сообщения `chrome.runtime.sendMessage` → background
@@ -113,7 +143,7 @@
 | `FB_REFRESH_SETTINGS` | `background.js` → вкладка | Перечитать storage/паузу и заново разослать настройки в MAIN (`settings-bridge.js`, `copy-helper.js`) |
 | `FB_POPUP_GET_STATE` | `popup.js` | Хост, флаги настроек, исключения, `injectable`, `paused` |
 | `FB_POPUP_SET_TAB_PAUSE` | `popup.js` | Поставить/снять паузу для активной вкладки |
-| `FB_POPUP_SET_STORAGE_BOOL` | `popup.js` | Запись `extensionGloballyEnabled`, `focusBlockingEnabled`, `securityEnabled`, `networkSecurityEnabled` и др. |
+| `FB_POPUP_SET_STORAGE_BOOL` | `popup.js` | Только ключи `extensionGloballyEnabled`, `focusBlockingEnabled`, `securityEnabled`, `networkSecurityEnabled` |
 | `FB_POPUP_ADD_HOST_EXCLUSION` | `popup.js` | Добавить текущий хост в `excludedDomains` |
 
 Ответы асинхронные (`return true` в listener где нужен `sendResponse`).
@@ -135,7 +165,8 @@ MAIN-скрипт может запросить переотправку: `FOCUS
 
 Кэш в `localStorage` (`__focus_blocker_*_cache_v1`) — это хранилище **самой страницы**, поэтому оно всегда считается недоверенным: подписать его нельзя (ключ HMAC генерируется заново на каждую загрузку), а удалить кэш страница может в любом случае. Отсюда правило: кэш способен только **усилить** защиту относительно безопасного значения по умолчанию, но никогда её не ослабить.
 
-- **ADS Block** читает кэш при `document_start`, чтобы перехватчики (`window.open`, `sendBeacon`, телеметрия) успели встать до скриптов страницы. Из кэша берутся **только булевы флаги и только значение `true`**; `false`, списки доменов/селекторов и `pageAllowed` игнорируются. Пользовательские списки в кэш **не пишутся**.
+- **Focus Blocker** читает boot-hint `__focus_blocker_focus_cache_v1` на `document_start`, чтобы события фокуса/видимости уже блокировались до скриптов страницы. Из кэша берётся только `isEnabled: true`; список событий всегда свой (`DEFAULT_BLOCKED_EVENTS`). Кэшированный `false` и чужой список событий игнорируются. Мост пишет в кэш лишь флаг on/off, без списка событий.
+- **ADS Block** читает кэш `__focus_blocker_ds_block_cache_v1` при `document_start`, чтобы перехватчики (`window.open`, `sendBeacon`, телеметрия) успели встать до скриптов страницы. Из кэша берутся **только булевы флаги и только значение `true`**; `false`, списки доменов/селекторов и `pageAllowed` игнорируются. Пользовательские списки в кэш **не пишутся**.
 - **Threat Shield**, **Network Security** и **Device Security** кэш **не читают и не пишут**: их состояние (`isActive`) задаётся только подписанным сообщением с моста. Устаревшие записи этих модулей при первой же рассылке настроек удаляются.
 - Полная конфигурация анти‑фингерпринта в `localStorage` страницы **не сохраняется**.
 
@@ -144,7 +175,7 @@ MAIN-скрипт может запросить переотправку: `FOCUS
 Канал «изолированный мир → MAIN» аутентифицирован, чтобы вредоносная страница не могла поддельным `postMessage` / `CustomEvent` отключить модули или подменить конфигурацию:
 
 * **`src/fb-channel.js`** (изолированный мир) и **`src/fb-channel-main.js`** (MAIN) — общая библиотека, подключается первой в своей записи `content_scripts`: чистый JS SHA‑256 / HMAC‑SHA256 (синхронный, работает и на `http://`, где недоступен `crypto.subtle`) и детерминированная сериализация `stableStringify` с сортировкой ключей. Все используемые нативы (`TextEncoder`, `JSON.stringify`, `Object.keys`, `Array.prototype.sort`, `Uint8Array` и т.д.) захватываются на `document_start` до выполнения скриптов страницы, а экспортируемый API заморожен — страница не может подменить методы и подсмотреть ключ. API публикуется в трёх местах: `globalThis.__fbChannel`, `document.documentElement.__fbChannelApi` и `Document.prototype.__fbChannelGet` (все неперезаписываемые)
-* **Байт‑идентичные копии для миров — так и задумано.** Один и тот же путь, перечисленный в нескольких записях `content_scripts`, может быть внедрён в документ лишь один раз: изолированная запись забирала единственное внедрение, и MAIN‑модули оставались вовсе без канала — все подписанные настройки отбрасывались (Threat Shield молчал, Device Security оставался fail‑closed и глушил IndexedDB). По той же причине продублирован и файл значений по умолчанию: `src/security-defaults.js` (изолированный мир, страница настроек, service worker) и `src/security-defaults-main.js` (MAIN) — иначе MAIN‑модули молча уходили на урезанные встроенные значения и ADS Block терял свои списки домены/селекторов. Правите один файл — копируйте его поверх второго; проверить и починить обе пары: `node tools/check-world-copies.mjs [--fix]`
+* **Байт‑идентичные копии для миров — так и задумано.** Один и тот же путь, перечисленный в нескольких записях `content_scripts`, может быть внедрён в документ лишь один раз: изолированная запись забирала единственное внедрение, и MAIN‑модули оставались вовсе без канала — все подписанные настройки отбрасывались (Threat Shield молчал, Device Security оставался fail‑closed и глушил IndexedDB). По той же причине продублирован и файл значений по умолчанию: `src/security-defaults.js` (изолированный мир, страница настроек, service worker) и `src/security-defaults-main.js` (MAIN) — иначе MAIN‑модули молча уходили на урезанные встроенные значения и ADS Block терял свои списки доменов/селекторов. Правите один файл — копируйте его поверх второго; проверить и починить обе пары: `node tools/check-world-copies.mjs [--fix]`
 * **Ключ** — 32 случайных байта на каждую загрузку страницы; мост передаёт его MAIN‑модулям через короткоживущий атрибут `<html data-fb-k="...">`. MAIN‑модули при необходимости перечитывают ключ при проверке подписи; атрибут снимается после ACK Focus или по таймауту (~5 с), а не сразу после первой async‑рассылки. Ключ **никогда не попадает в сами сообщения**
 * **Подпись** — каждое сообщение несёт монотонный счётчик `seq` и `sig = HMAC(key, stableStringify(payload без sig))`; MAIN‑модули проверяют подпись и требуют строго возрастающий `seq` (защита от replay)
 * **Fail-closed** — Network Security и Device Security стартуют включёнными и могут быть отключены только подписанным сообщением; `workerScriptUrl` для анти‑фингерпринта принимается из HMAC‑payload как `chrome-extension://…/src/security-worker.js` (в MAIN нет `chrome.runtime`); критичные перехваты API закреплены через `configurable: false` с no‑op setter, чтобы страница не падала на присвоении
@@ -156,17 +187,22 @@ MAIN-скрипт может запросить переотправку: `FOCUS
 
 В изолированный мир уходит `postMessage` с типом **`FOCUS_BLOCKER_STATS_DELTA`** (`deltas`, `breakdown`, `topHost`), оттуда — `FB_STATS_REPORT` в service worker.
 
-### Где смотреть реализацию модулей страницы
+### Где смотреть реализацию
 
 * `src/fb-channel.js`, `src/fb-channel-main.js` — криптопримитивы канала настроек (HMAC‑SHA256, каноническая сериализация); идентичные копии для изолированного и MAIN миров
 * `src/security-defaults.js`, `src/security-defaults-main.js` — значения по умолчанию, пресеты и функции слияния настроек; такая же пара копий
+* `src/settings-bridge.js`, `src/stats-bridge.js` — изолированный мир: storage → MAIN, статистика → background
 * `src/content.js` — Focus Blocker в MAIN
 * `src/security.js`, `src/security-worker.js` — анти‑фингерпринт
 * `src/network-security.js` — перехваты fetch/XHR/WebSocket и др. в рамках настроек
 * `src/device-security.js` — API устройства и хранилищ
 * `src/ds-block.js` — ADS Block: попапы, телеметрия, косметика (совместно с background)
-* `src/copy-helper.js` — копирование
-* `src/threat-shield.js` — баннер и эвристики Threat Shield (баннер показывается только в главном фрейме — проверка выполняется в самом модуле)
+* `src/copy-helper.js` — копирование (isolated, `document_idle`)
+* `src/threat-shield.js` — баннер и эвристики Threat Shield (баннер только в главном фрейме; строки по языку UI)
+* `src/i18n.js` — каталоги ru / en / uk для попапа, страницы параметров и баннера (собирается `tools/gen-i18n.mjs`)
+* `src/options.js`, `public/options.html` — страница параметров
+* `src/popup.js`, `public/popup.html` — попап
+* `src/background.js` — service worker
 
 ---
 
