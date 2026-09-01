@@ -1,4 +1,4 @@
-![Static Badge](https://img.shields.io/badge/Created_by-Vikentiy_Pachovskiy-brightgreen)  [![Google Chrome](https://img.shields.io/badge/Google%20Chrome-4285F4?logo=GoogleChrome&logoColor=white)](#)  ![Opera](https://img.shields.io/badge/Opera-%23FF1B2D.svg?style=for-the-badge&logo=Opera&logoColor=white) ![JavaScript](https://img.shields.io/badge/javascript-%23323330.svg?style=for-the-badge&logo=javascript&logoColor=%23F7DF1E)  
+![Created by Vikentiy Pachovskiy](https://img.shields.io/badge/Created_by-Vikentiy_Pachovskiy-brightgreen) ![Google Chrome](https://img.shields.io/badge/Google_Chrome-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white) ![Opera](https://img.shields.io/badge/Opera-FF1B2D?style=for-the-badge&logo=opera&logoColor=white) ![JavaScript](https://img.shields.io/badge/JavaScript-323330?style=for-the-badge&logo=javascript&logoColor=F7DF1E)  
 
 > 📄 [Русская версия](./README-RU.md)
 
@@ -34,9 +34,9 @@ License: [MIT](./LICENSE)
 
 ## Download
 
-![Opera](https://img.shields.io/badge/Opera-%23FF1B2D.svg?style=for-the-badge&logo=Opera&logoColor=white) [![Download](https://img.shields.io/badge/Download-2ea44f?style=for-the-badge)](https://addons.opera.com/ru/extensions/details/browser-security/)
+![Opera](https://img.shields.io/badge/Opera-FF1B2D?style=for-the-badge&logo=opera&logoColor=white) [![Download](https://img.shields.io/badge/Download-2ea44f?style=for-the-badge)](https://addons.opera.com/ru/extensions/details/browser-security/)
 
-![GitHub](https://img.shields.io/badge/github-%23121011.svg?style=for-the-badge&logo=github&logoColor=white) [![Download](https://img.shields.io/badge/Download-2ea44f?style=for-the-badge)](https://github.com/ppvikentiy/security-browser-ex)
+![GitHub](https://img.shields.io/badge/GitHub-121011?style=for-the-badge&logo=github&logoColor=white) [![Download](https://img.shields.io/badge/Download-2ea44f?style=for-the-badge)](https://github.com/ppvikentiy/security-browser-ex)
 
 ## Screenshots
 
